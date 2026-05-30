@@ -2,12 +2,14 @@ import os
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Point
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+import mediapipe as mp
 
 _default = Path(__file__).resolve().parents[4] / 'provided_code'
 PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
@@ -36,6 +38,15 @@ class ArmDetectionNode(Node):
         self._map1 = None
         self._map2 = None
 
+        self.mp_hands = mp.solutions.hands
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.8,
+            min_tracking_confidence=0.8
+        )
+        self.mp_draw = mp.solutions.drawing_utils
+
         h_path = PROVIDED_CODE / 'HomographyMatrix.npy'
         cam_path = PROVIDED_CODE / 'camera_params.npz'
 
@@ -58,7 +69,7 @@ class ArmDetectionNode(Node):
             self.get_logger().warn(f'camera_params.npz not found at {cam_path}')
 
         self._sub = self.create_subscription(
-            Image, '/workspace_camera/image_raw', self._cb_frame, 10
+            Image, 'workspace_camera/image_raw', self._cb_frame, 10
         )
         self._pub = self.create_publisher(Point, '/workspace/arm_position', 10)
 
@@ -71,8 +82,38 @@ class ArmDetectionNode(Node):
         return float(xy[0]), float(xy[1])
 
     def _cb_frame(self, msg: Image):
+        self.get_logger().info(
+                f'publishing arm_position: ' )
         if self._H is None:
             return
+
+        frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        result = self.hands.process(rgb)
+
+        if result.multi_hand_landmarks:
+            hand_landmarks = result.multi_hand_landmarks[0]  # first hand only
+
+            index_tip = hand_landmarks.landmark[8]  # index fingertip
+
+            x = index_tip.x
+            y = index_tip.y
+            z = index_tip.z
+            msg = Point()
+            msg.x = index_tip.x
+            msg.y = index_tip.y
+            msg.z = index_tip.z
+            self.get_logger().info(
+                f'publishing arm_position: x={msg.x:.3f} y={msg.y:.3f} z={msg.z:.3f}',
+                throttle_duration_sec=1.0,
+            )
+            self._pub.publish(msg)
+
+
+        
+        
+       
         # TODO: implement MediaPipe hand detection and publish Point
         pass
 
