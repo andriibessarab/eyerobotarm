@@ -26,12 +26,14 @@ class PreviewNode(Node):
         self._latest_frame  = None
         self._pending: list[ObjectDetection] = []
         self._arm_pt: Point | None = None
+        self._arm_pixel: Point | None = None
         self._arm_stamp     = 0.0
 
         self.create_subscription(Image, '/workspace_camera/image_raw', self._cb_frame, 10)
         self.create_subscription(
             ObjectDetection, '/object_detection_node/detected_objects', self._cb_detection, 50)
         self.create_subscription(Point, '/workspace/arm_position', self._cb_arm, 10)
+        self.create_subscription(Point, '/workspace/arm_pixel',    self._cb_arm_pixel, 10)
 
         self.create_timer(1.0 / 30.0, self._draw)
         self.get_logger().info('preview_node ready — press Q to quit')
@@ -46,6 +48,9 @@ class PreviewNode(Node):
     def _cb_arm(self, msg: Point):
         self._arm_pt    = msg
         self._arm_stamp = self.get_clock().now().nanoseconds / 1e9
+
+    def _cb_arm_pixel(self, msg: Point):
+        self._arm_pixel = msg
 
     def _draw(self):
         if self._latest_frame is None:
@@ -67,20 +72,17 @@ class PreviewNode(Node):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
             cv2.circle(frame, (cx, cy), 4, color, -1)
 
-        # Arm position — shown as crosshair, fades after _ARM_TIMEOUT seconds
+        # Arm position dot + label
         now = self.get_clock().now().nanoseconds / 1e9
         if self._arm_pt is not None and (now - self._arm_stamp) < _ARM_TIMEOUT:
-            # Back-project robot XY to pixel using the inverse is unavailable here,
-            # so we label it in the corner with the robot coords
             rx, ry = self._arm_pt.x, self._arm_pt.y
-            label = f'ARM  ({rx:.0f}, {ry:.0f}) mm'
-            cv2.putText(frame, label,
-                        (10, frame.shape[0] - 35),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, _ARM_COLOR, 2, cv2.LINE_AA)
-            cv2.rectangle(frame,
-                          (5, frame.shape[0] - 55),
-                          (len(label) * 11 + 10, frame.shape[0] - 20),
-                          _ARM_COLOR, 1)
+            if self._arm_pixel is not None:
+                ax, ay = int(self._arm_pixel.x), int(self._arm_pixel.y)
+                cv2.circle(frame, (ax, ay), 14, _ARM_COLOR, -1)
+                cv2.circle(frame, (ax, ay), 16, (255, 255, 255), 2)
+                cv2.putText(frame, f'ARM ({rx:.0f}, {ry:.0f}) mm',
+                            (ax + 20, ay + 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, _ARM_COLOR, 2, cv2.LINE_AA)
 
         # HUD
         n_targets = sum(1 for d in self._pending if d.label == 'target')

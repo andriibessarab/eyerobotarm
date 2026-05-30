@@ -62,7 +62,8 @@ class ArmDetectionNode(Node):
         self._sub = self.create_subscription(
             Image, '/workspace_camera/image_raw', self._cb_frame, 10
         )
-        self._pub = self.create_publisher(Point, '/workspace/arm_position', 10)
+        self._pub       = self.create_publisher(Point, '/workspace/arm_position', 10)
+        self._pixel_pub = self.create_publisher(Point, '/workspace/arm_pixel', 10)
 
         self.get_logger().info('arm_detection_node ready (skin-HSV detection)')
 
@@ -114,6 +115,10 @@ class ArmDetectionNode(Node):
         pt = Point()
         pt.x, pt.y, pt.z = robot_x, robot_y, 0.0
         self._pub.publish(pt)
+
+        px = Point()
+        px.x, px.y, px.z = cx, cy, 0.0
+        self._pixel_pub.publish(px)
 
         self.get_logger().info(
             f'arm at pixel ({cx:.0f}, {cy:.0f}) → robot ({robot_x:.1f}, {robot_y:.1f}) mm',
