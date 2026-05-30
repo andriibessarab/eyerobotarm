@@ -1,0 +1,7 @@
+float64 pick_x
+float64 pick_y
+float64 drop_x
+float64 drop_y
+---
+bool success
+string message
