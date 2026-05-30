@@ -1,0 +1,85 @@
+import cv2
+from pyapriltags import Detector
+
+STREAM_URL = "tcp://10.12.194.1:5000"
+
+def main():
+    # Use CAP_DSHOW on Windows to make webcam opening more reliable.
+    cap = cv2.VideoCapture(STREAM_URL, cv2.CAP_FFMPEG)
+
+    if not cap.isOpened():
+        print("Error: Could not open camera.")
+        return
+
+    detector = Detector(
+        families="tag16h5",
+        nthreads=1,
+        quad_decimate=1.0,
+        quad_sigma=0.0,
+        refine_edges=1,
+        decode_sharpening=0.25,
+        debug=0
+    )
+
+    print("AprilTag detector running. Press 'q' to quit.")
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            print("Error: Could not read frame.")
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        detections = detector.detect(gray)
+
+        for detection in detections:
+            if detection.decision_margin < 10:
+                continue
+            
+            tag_id = detection.tag_id
+            center = detection.center
+            corners = detection.corners
+
+            # Convert corner points to integers for drawing
+            corners = corners.astype(int)
+            center = center.astype(int)
+
+            # Draw box around tag
+            for i in range(4):
+                pt1 = tuple(corners[i])
+                pt2 = tuple(corners[(i + 1) % 4])
+                cv2.line(frame, pt1, pt2, (0, 255, 0), 2)
+
+            # Draw center point
+            cv2.circle(frame, tuple(center), 5, (0, 0, 255), -1)
+
+            # Draw tag ID
+            cv2.putText(
+                frame,
+                f"ID: {tag_id}",
+                tuple(center),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 0, 0),
+                2
+            )
+
+            print(
+                f"Detected tag ID {tag_id} | "
+                f"Center: {detection.center} | "
+                f"Decision margin: {detection.decision_margin:.2f}"
+            )
+
+        cv2.imshow("AprilTag Detection", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
