@@ -1,6 +1,7 @@
 import cv2
 import rclpy
 from cv_bridge import CvBridge
+from geometry_msgs.msg import Point
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
@@ -21,8 +22,10 @@ class PreviewNode(Node):
 
         self._bridge = CvBridge()
         self._latest_frame = None
+        self._latest_arm_position: Point | None = None
         # pending detections cleared each time we draw a new frame
         self._pending: list[ObjectDetection] = []
+        self._display_scale = 0.2
 
         self.create_subscription(Image, '/workspace_camera/image_raw', self._cb_frame, 10)
         self.create_subscription(
@@ -31,6 +34,7 @@ class PreviewNode(Node):
             self._cb_detection,
             50,
         )
+        self.create_subscription(Point, '/workspace/arm_position', self._cb_arm_position, 10)
 
         self.create_timer(1.0 / 30.0, self._draw)
         self.get_logger().info('preview_node ready — press Q in the window to quit')
@@ -41,6 +45,9 @@ class PreviewNode(Node):
 
     def _cb_detection(self, msg: ObjectDetection):
         self._pending.append(msg)
+
+    def _cb_arm_position(self, msg: Point):
+        self._latest_arm_position = msg
 
     def _draw(self):
         if self._latest_frame is None:
@@ -70,6 +77,15 @@ class PreviewNode(Node):
                     (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(frame, 'Q to quit', (10, frame.shape[0] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
+
+        if self._latest_arm_position is not None:
+            arm_text = f"arm_position: ({self._latest_arm_position.x:.0f}, {self._latest_arm_position.y:.0f})"
+            cv2.circle(frame, (25, 55), 8, (0, 0, 255), -1)
+            cv2.putText(frame, arm_text, (40, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2, cv2.LINE_AA)
+
+        if self._display_scale != 1.0:
+            frame = cv2.resize(frame, None, fx=self._display_scale, fy=self._display_scale, interpolation=cv2.INTER_AREA)
 
         cv2.imshow('S26 Workspace Camera', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
