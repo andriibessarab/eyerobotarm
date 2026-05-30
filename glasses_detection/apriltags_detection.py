@@ -1,7 +1,15 @@
+import math
+from datetime import datetime
+
 import cv2
 from pyapriltags import Detector
 
 STREAM_URL = "tcp://10.12.194.1:5000"
+
+STARE_TIME = 3 # Seconds
+DISTANCE_THRESHOLD = 150 # Pixels
+
+OFFSET_Y = 50 # Pixels
 
 def main():
     # Use CAP_DSHOW on Windows to make webcam opening more reliable.
@@ -21,7 +29,10 @@ def main():
         debug=0
     )
 
-    print("AprilTag detector running. Press 'q' to quit.")
+    print("AprilTag detector running.")
+
+    detected_tag = None
+    tag_detected = None
 
     while True:
         ret, frame = cap.read()
@@ -34,6 +45,12 @@ def main():
 
         detections = detector.detect(gray)
 
+        if not detections:
+            detected_tag = None
+            continue
+        elif detected_tag and detected_tag[0] not in [d.tag_id for d in detections]:
+            detected_tag = None
+
         for detection in detections:
             if detection.decision_margin < 10:
                 continue
@@ -42,9 +59,39 @@ def main():
             center = detection.center
             corners = detection.corners
 
+            frame_center = (gray.shape[1] / 2, gray.shape[0] / 2)
+
+            center[1] -= OFFSET_Y
+
+            distance_from_center = math.dist(center, frame_center)
+
+            if distance_from_center > DISTANCE_THRESHOLD:
+                continue
+
+            if detected_tag is not None and detected_tag[0] == tag_id:
+                # If the same tag is detected, check if it's within the stare time
+                if (datetime.now() - detected_tag[2]).total_seconds() < STARE_TIME:
+                    continue
+                else:
+                    detected_tag = None
+                    tag_detected = detection
+
+            elif detected_tag is not None:
+                # Take the closest tag to the center if multiple tags are detected
+                if detected_tag[1] < distance_from_center:
+                    continue
+
+            detected_tag = [tag_id, distance_from_center, datetime.now()]
+
+            print(f"Tag ID {tag_id} detected at distance {distance_from_center:.2f} pixels from center.")
+
+        if tag_detected is not None:
+            # TODO: Connect this with the rest of the system
+
+
             # Convert corner points to integers for drawing
-            corners = corners.astype(int)
-            center = center.astype(int)
+            corners = tag_detected.corners.astype(int)
+            center = tag_detected.center.astype(int)
 
             # Draw box around tag
             for i in range(4):
@@ -58,18 +105,12 @@ def main():
             # Draw tag ID
             cv2.putText(
                 frame,
-                f"ID: {tag_id}",
+                f"ID: {tag_detected.tag_id}",
                 tuple(center),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 (255, 0, 0),
                 2
-            )
-
-            print(
-                f"Detected tag ID {tag_id} | "
-                f"Center: {detection.center} | "
-                f"Decision margin: {detection.decision_margin:.2f}"
             )
 
         cv2.imshow("AprilTag Detection", frame)
