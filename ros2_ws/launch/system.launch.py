@@ -9,6 +9,7 @@ def generate_launch_description():
             executable='dobot_arm_node',
             name='dobot_arm',
             output='screen',
+            parameters=[{'serial_port': '/dev/ttyUSB0'}],
         ),
         Node(
             package='camera_pipeline',
