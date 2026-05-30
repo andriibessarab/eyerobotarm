@@ -1,0 +1,285 @@
+import dobotArm
+import lib.DobotDllType as dType
+import numpy as np
+import cv2
+
+"""CONSTANTS"""
+Z_SAFE = 40
+Z_PICK = -25
+api = dType.load()
+cap = cv2.VideoCapture(0)
+H_matrix = np.load("HomographyMatrix.npy")
+data = np.load("camera_params.npz")
+camera_matrix = data["camera_matrix"]
+dist_coeffs   = data["dist_coeffs"]
+
+# compute undistort maps once
+ret,frame = cap.read()
+h,w = frame.shape[:2]
+
+new_K, roi = cv2.getOptimalNewCameraMatrix(
+    camera_matrix,
+    dist_coeffs,
+    (w,h),
+    1
+)
+map1, map2 = cv2.initUndistortRectifyMap(
+    camera_matrix,
+    dist_coeffs,
+    None,
+    new_K,
+    (w,h),
+    cv2.CV_16SC2
+)
+
+def pixel_to_robot(u, v, H):
+    p = np.array([u, v, 1])
+    xy = H @ p
+    xy /= xy[2]
+    return xy[0], xy[1]
+
+def detect_plate_phase(cap, map1, map2):
+    print("\n[SYSTEM] Waiting for dish... Stabilization active.")
+    
+    confirm_frames = 0
+    STABILITY_THRESHOLD = 25  # Number of frames to stay still
+    stable_x, stable_y = 0, 0
+    radius = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
+        
+        frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.medianBlur(gray, 7)
+        edges = cv2.Canny(blurred, 50, 150)
+
+        cv2.imshow("test",edges)
+
+        # Detect Circles
+        circles = cv2.HoughCircles(
+    blurred,             
+    cv2.HOUGH_GRADIENT, 
+    dp=1,               
+    minDist=150, 
+    param1=100,         
+    param2=35,          
+    minRadius=25,        
+    maxRadius=55         
+    )
+
+        if circles is not None:
+            circles = np.uint16(np.around(circles))
+            i = circles[0, 0]
+            curr_x, curr_y, curr_r = int(i[0]), int(i[1]), int(i[2])
+            print(f"Frames: {confirm_frames} | Move: {abs(curr_x - stable_x)}, {abs(curr_y - stable_y)}")
+   
+
+            # --- THE STABILITY CONDITION ---
+            # Checks if the center has moved less than 3 pixels
+            if abs(curr_x - stable_x) < 15 and abs(curr_y - stable_y) < 15:
+                confirm_frames += 1
+            else:
+                confirm_frames = 0 
+            
+            stable_x, stable_y, radius = curr_x, curr_y, curr_r
+            
+            # --- DRAWING THE OUTLINE & CENTER ---
+            # 1. Draw the plate circumference (Green Outline)
+            cv2.circle(frame, (stable_x, stable_y), radius, (0, 255, 0), 3)
+            
+            # 2. Draw the center point (Solid Red Dot)
+            cv2.circle(frame, (stable_x, stable_y), 6, (0, 0, 255), -1)
+            
+            # 3. Add visual "Locking" feedback
+            progress = int((confirm_frames / STABILITY_THRESHOLD) * 100)
+            color = (0, 255, 0) if progress < 100 else (255, 255, 0)
+            
+            cv2.putText(frame, f"LOCKING: {progress}%", (stable_x - 60, stable_y - radius - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        else:
+            confirm_frames = 0
+            cv2.putText(frame, "SEARCHING FOR DISH...", (20, 40), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        cv2.imshow("Environment Setup", frame)
+        cv2.waitKey(1)
+
+        # TRIGGER CONDITION: If stable for enough frames, return coords
+        if confirm_frames >= STABILITY_THRESHOLD:
+            print(f"Target Locked! Pixel: ({stable_x}, {stable_y})")
+            drop_position = pixel_to_robot(stable_x, stable_y, H_matrix)
+            dobotArm.move_to_xyz(api, drop_position[0], drop_position[1], Z_SAFE)
+            cv2.waitKey(1)#comment this line to skil human verification
+            cv2.destroyWindow("Environment Setup")
+            # Convert pixels to robot space via Homography
+            return pixel_to_robot(stable_x, stable_y, H_matrix)
+         
+def detect_red_tags(frame):
+    # Blur reduces mask noise
+        frame_blur = cv2.GaussianBlur(frame, (3,3), 0)
+        # BGR → HSV
+        hsv = cv2.cvtColor(frame_blur, cv2.COLOR_BGR2HSV)
+
+        lower_red1 = np.array([0,120,70])
+        upper_red1 = np.array([10,255,255])
+
+        lower_red2 = np.array([170,120,70])
+        upper_red2 = np.array([180,255,255])
+
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask = mask1 + mask2
+
+        kernel = np.ones((5,5), np.uint8)
+
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        return contours
+
+
+#-----------------------------------------------------------------------------------------------------
+#----------------------------------------------LOOP STARTS HERE
+#------------------------------------------------------------------------------------------------------
+
+# Initialize Robot
+dobotArm.initialize_robot(api)
+dobotArm.open_gripper(api)
+dobotArm.stop_pump(api)
+#assumes there's only 1 plate, change later
+drop_x, drop_y = detect_plate_phase(cap, map1, map2) 
+
+# Red Block Detection Fr
+while True:
+    cx, cy = None, None
+    confirmed_block = None
+    last_cx, last_cy = 0, 0
+    stable_pix_thres = 20
+    stable_frame = 0
+    stable_thresh = 20
+
+    # -----------------------------
+    # CV DETECTION LOOP
+    # -----------------------------
+    while True:
+        ret, frame = cap.read()
+        frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
+        if not ret:
+            break
+        contours = detect_red_tags(frame)
+
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            if cv2.contourArea(largest) > 1000:
+                # ----- TRUE CENTER -----
+                M = cv2.moments(largest)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"])
+                else:
+                    cx, cy = 0, 0
+                #stablize detection
+                
+                if np.sqrt((cx - last_cx)**2 + (cy - last_cy)**2) < stable_pix_thres:
+                    stable_frame += 1
+                else:
+                    stable_frame = 0
+                
+                last_cx, last_cy = cx, cy
+
+                if stable_frame >= stable_thresh:
+                    confirm_block = largest
+                    break
+                
+
+                # ----- ORIENTATION -----
+                rect = cv2.minAreaRect(confirm_block)
+                (rx, ry), (w, h), angle = rect
+
+                box = cv2.boxPoints(rect)
+                box = np.int32(box)
+
+                # normalize angle
+                if w < h:
+                    angle = angle + 90
+
+                # draw rotated box
+                cv2.drawContours(frame, [box], 0, (0,255,0), 2)
+
+                # draw center
+                cv2.circle(frame, (cx,cy), 5, (255,0,0), -1)
+
+                cv2.putText(frame,
+                            f"({cx},{cy}) angle:{angle:.1f}",
+                            (cx+10, cy),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            (255,0,0),
+                            2)
+                print("Center:", cx, cy)
+                print("Angle:", angle)
+
+        cv2.imshow("Frame", frame)
+        #cv2.imshow("Mask", mask)
+
+    key = cv2.waitKey(1) & 0xFF 
+
+    if key == ord('q'):
+            cap.release()
+            cv2.destroyAllWindows()
+            exit()
+
+        # press SPACE to lock detection
+    if key == ord(' '):
+            if cx is not None:
+                print(drop_x,drop_y)
+                break
+            else:
+                print("No block detected yet")
+
+    # -----------------------------
+    # CONVERT TO ROBOT COORD
+    # -----------------------------
+    x_robot, y_robot = pixel_to_robot(cx, cy, H_matrix)
+    print("ROBOT COORD:", x_robot, y_robot)
+
+    # -----------------------------
+    # MOVE ABOVE BLOCK
+    # -----------------------------
+    dobotArm.move_to_xyz(api, x_robot, y_robot, Z_SAFE)
+
+    print("\nRobot above block.")
+    print("Press:")
+    print("p = proceed to pick")
+    print("a = abort and re-detect")
+
+    choice = input("Choice: ")
+
+    if choice.lower() == 'a':
+        print("Aborting pick. Restarting vision.")
+        continue
+
+    # -----------------------------
+    # PICK SEQUENCE
+    # -----------------------------
+    dobotArm.move_to_xyz(api, x_robot, y_robot, Z_PICK)
+
+    dobotArm.close_gripper(api)
+
+    dobotArm.move_to_xyz(api, x_robot, y_robot, Z_SAFE)
+
+    dobotArm.move_to_xyz(api,drop_x, drop_y, Z_SAFE)
+
+    dobotArm.open_gripper(api)
+
+    dobotArm.stop_pump(api)
+
+    break
+
+# Cleanup CV2 Stuff
+cap.release()
+cv2.destroyAllWindows()
