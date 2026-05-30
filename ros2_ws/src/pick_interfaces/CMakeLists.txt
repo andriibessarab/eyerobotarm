@@ -9,6 +9,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectDetection.msg"
   "msg/RobotPose.msg"
+  "msg/TagDetection.msg"
+  "msg/TagDetectionArray.msg"
   "srv/MoveToXYZ.srv"
   "srv/MoveJoints.srv"
   "srv/GripperControl.srv"
