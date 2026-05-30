@@ -15,7 +15,7 @@ class GazeCameraNode(Node):
         idx = self.get_parameter('camera_index').get_parameter_value().integer_value
 
         self._bridge = CvBridge()
-        self._pub = self.create_publisher(Image, '~/image_raw', 10)
+        self._pub = self.create_publisher(Image, '/gaze_camera/image_raw', 10)
 
         self._cap = cv2.VideoCapture(idx)
         if not self._cap.isOpened():
