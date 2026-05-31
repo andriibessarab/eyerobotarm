@@ -1,3 +1,5 @@
+import datetime
+import os
 import time
 
 import cv2
@@ -15,6 +17,9 @@ KEY_Q   = ord('q')
 KEY_TAB = 9
 KEY_H   = ord('h')
 KEY_V   = ord('v')
+KEY_R   = ord('r')
+
+RECORDINGS_DIR = os.path.expanduser('~/recordings')
 
 LOCK_DISPLAY_SEC = 2.0  # how long to show "LOCKED" banner after a lock fires
 
@@ -56,6 +61,11 @@ class PreviewNode(Node):
         self._gaze_locked_id    = -1   # last confirmed lock
         self._gaze_lock_until   = 0.0  # time.time() until lock banner shows
 
+        # Recording state
+        self._recording       = False
+        self._video_writer: cv2.VideoWriter | None = None
+        self._recording_path  = ''
+
         self.create_subscription(Image, '/workspace_camera/image_raw',    self._cb_workspace,  10)
         self.create_subscription(Image, '/gaze_camera/image_raw',          self._cb_gaze,       10)
         self.create_subscription(Point, '/workspace/arm_position_pixel',   self._cb_arm_pixel,  10)
@@ -64,7 +74,7 @@ class PreviewNode(Node):
         self.create_subscription(Int32, '/gaze/gazed_tag_id',              self._cb_locked,     10)
 
         self.create_timer(1.0 / 30.0, self._draw)
-        self.get_logger().info('preview_node ready — Tab: toggle camera | H: flip horizontal | V: flip vertical | Q: quit')
+        self.get_logger().info('preview_node ready — Tab: toggle camera | H: flip H | V: flip V | R: record | Q: quit')
 
     # ── callbacks ──────────────────────────────────────────────────────────
 
@@ -112,9 +122,20 @@ class PreviewNode(Node):
             cv2.putText(frame, 'WORKSPACE CAM', (8, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_LABEL, 1)
 
-        cv2.imshow('S26 Preview  [Tab: toggle | H: flip H | V: flip V | Q: quit]', frame)
+        # Write frame to recording if active
+        if self._recording and self._video_writer is not None:
+            self._video_writer.write(frame)
+
+        # Recording indicator — red dot + "REC"
+        if self._recording:
+            cv2.circle(frame, (frame.shape[1] - 18, 14), 7, (0, 0, 220), -1)
+            cv2.putText(frame, 'REC', (frame.shape[1] - 50, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 220), 1)
+
+        cv2.imshow('S26 Preview  [Tab: toggle | H: flip H | V: flip V | R: record | Q: quit]', frame)
         key = cv2.waitKey(1) & 0xFF
         if key == KEY_Q:
+            self._stop_recording()
             cv2.destroyAllWindows()
             rclpy.shutdown()
         elif key == KEY_TAB:
@@ -128,6 +149,11 @@ class PreviewNode(Node):
         elif key == KEY_V:
             self._flip_v = not self._flip_v
             self.get_logger().info(f"Vertical flip: {'ON' if self._flip_v else 'off'}")
+        elif key == KEY_R:
+            if self._recording:
+                self._stop_recording()
+            else:
+                self._start_recording(frame)
 
     def _get_frame(self, src, s):
         """Return a scaled copy of src, or a black placeholder if src is None."""
@@ -191,7 +217,25 @@ class PreviewNode(Node):
         cv2.putText(frame, text, (tx, ty),
                     cv2.FONT_HERSHEY_SIMPLEX, scale, colour, thick, cv2.LINE_AA)
 
+    def _start_recording(self, frame):
+        os.makedirs(RECORDINGS_DIR, exist_ok=True)
+        ts = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self._recording_path = os.path.join(RECORDINGS_DIR, f'{ts}.mp4')
+        h, w = frame.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        self._video_writer = cv2.VideoWriter(self._recording_path, fourcc, 30.0, (w, h))
+        self._recording = True
+        self.get_logger().info(f'Recording started → {self._recording_path}')
+
+    def _stop_recording(self):
+        if self._video_writer is not None:
+            self._video_writer.release()
+            self._video_writer = None
+            self.get_logger().info(f'Recording saved → {self._recording_path}')
+        self._recording = False
+
     def destroy_node(self):
+        self._stop_recording()
         cv2.destroyAllWindows()
         super().destroy_node()
 
