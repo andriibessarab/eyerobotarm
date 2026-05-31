@@ -28,7 +28,7 @@ C_OK      = ( 60, 200,  80)
 C_FAIL    = ( 60,  60, 200)
 C_GAZE    = (100, 180, 255)
 
-STALE_SEC = 2.0   # seconds before a detection is considered stale
+STALE_SEC = 0.5   # seconds before a detection is considered stale
 
 
 def _ascii(text: str) -> str:
