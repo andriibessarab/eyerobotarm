@@ -41,12 +41,12 @@ CAMERA_INDEX = 0               # Orbbec USB camera
 CAL_FILE     = Path(__file__).parent / 'camera_params.npz'
 OUT_FILE     = Path(__file__).parent / 'HomographyMatrix.npy'
 
-# 12-point calibration grid (robot XY in mm)
+# 16-point calibration grid — spans the full reachable workspace (mm)
 ROBOT_POINTS = np.array([
-    [180, -60], [210, -60], [240, -60],
-    [180, -20], [210, -20], [240, -20],
-    [180,  20], [210,  20], [240,  20],
-    [180,  60], [210,  60], [240,  60],
+    [150, -80], [210, -80], [270, -80], [310, -80],
+    [150, -30], [210, -30], [270, -30], [310, -30],
+    [150,  30], [210,  30], [270,  30], [310,  30],
+    [150,  80], [210,  80], [270,  80], [310,  80],
 ], dtype=np.float32)
 
 Z_CAL   = -19   # mm — height at which robot tip touches table surface
