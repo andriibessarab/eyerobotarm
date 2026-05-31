@@ -12,7 +12,7 @@ class DobotArmNode(Node):
     def __init__(self):
         super().__init__('dobot_arm_node')
 
-        self.declare_parameter('serial_port', '/dev/ttyUSB0')
+        self.declare_parameter('serial_port', '/dev/ttyUSB1')
         self.declare_parameter('rotate_angle', 0.0)
 
         port = self.get_parameter('serial_port').value
