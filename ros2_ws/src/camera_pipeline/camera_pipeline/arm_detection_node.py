@@ -75,18 +75,11 @@ class ArmDetectionNode(Node):
 
         self.get_logger().info('arm_detection_node ready')
     
+    @staticmethod
     def get_hand_normal(hand):
-        wrist = np.array([hand.landmark[0].x,
-                        hand.landmark[0].y,
-                        hand.landmark[0].z])
-
-        index = np.array([hand.landmark[5].x,
-                        hand.landmark[5].y,
-                        hand.landmark[5].z])
-
-        pinky = np.array([hand.landmark[17].x,
-                        hand.landmark[17].y,
-                        hand.landmark[17].z])
+        wrist = np.array([hand[0].x, hand[0].y, hand[0].z])
+        index = np.array([hand[5].x, hand[5].y, hand[5].z])
+        pinky = np.array([hand[17].x, hand[17].y, hand[17].z])
 
         v1 = index - wrist
         v2 = pinky - wrist
@@ -120,7 +113,7 @@ class ArmDetectionNode(Node):
             # Palm centre: midpoint of wrist and middle-finger MCP
             palm_x = ((wrist.x + middle_mcp.x) / 2) * width
             palm_y = ((wrist.y + middle_mcp.y) / 2) * height
-            hand_normal = self.get_hand_normal(hand_landmarks[0])
+            hand_normal = self.get_hand_normal(hand_landmarks)
             if hand_normal[2] < 0:
                 self.get_logger().info('Hand facing away from camera — ignoring', throttle_duration_sec=1.0)
             else:
