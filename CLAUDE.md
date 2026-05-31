@@ -131,20 +131,14 @@ python pickCVBlock.py                 # standalone pick-place loop
 - `provided_code/camera_params.npz` — intrinsic camera matrix + distortion coeffs. Regenerate with `calibrateCamera.py` only when switching cameras.
 - All nodes load these at startup via the `PROVIDED_CODE_PATH` env var (set automatically by `system.launch.py`). A warning is logged if files are missing.
 
-### Key constants
-
-```python
-Z_SAFE = 40.0   # mm — clearance height for horizontal moves
-Z_PICK = -25.0  # mm — height to grip object
-Z_DROP = 0.0    # mm — height to release into hand (ROS param, tunable)
-```
-
 ### task_coordinator_node parameters
 
 | Parameter | Default | Description |
 |---|---|---|
 | `min_reach_mm` | `135.0` | Inner Dobot workspace bound (mm from base) |
 | `max_reach_mm` | `320.0` | Outer Dobot workspace bound |
+| `z_safe` | `40.0` | Clearance height (mm) for horizontal moves |
+| `z_pick` | `-25.0` | Descent height (mm) to grip the object |
 | `z_drop` | `0.0` | Z height (mm) for releasing into hand |
 | `normal_velocity` | `50` | Arm speed % during pick and transit |
 | `approach_velocity` | `20` | Arm speed % during final descent to hand |

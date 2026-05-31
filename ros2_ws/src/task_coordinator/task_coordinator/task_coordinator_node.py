@@ -11,10 +11,6 @@ from pick_interfaces.msg import TagDetectionArray
 from pick_interfaces.srv import GripperControl, MoveToXYZ, SetSpeed
 
 
-Z_SAFE = 40.0   # mm — clearance height for horizontal moves
-Z_PICK = -25.0  # mm — height to grip object
-
-
 class State(Enum):
     IDLE = auto()
     EXECUTING = auto()
@@ -49,6 +45,8 @@ class TaskCoordinatorNode(Node):
 
         self.declare_parameter('min_reach_mm', 135.0)
         self.declare_parameter('max_reach_mm', 320.0)
+        self.declare_parameter('z_safe', 40.0)
+        self.declare_parameter('z_pick', -25.0)
         self.declare_parameter('z_drop', 0.0)
         self.declare_parameter('normal_velocity', 50)
         self.declare_parameter('approach_velocity', 20)
@@ -163,9 +161,11 @@ class TaskCoordinatorNode(Node):
         timeout = self.get_parameter('exec_timeout').value
         self._watchdog = self.create_timer(timeout, self._on_timeout)
 
+        z_safe     = self.get_parameter('z_safe').value
+        z_pick     = self.get_parameter('z_pick').value
+        z_drop     = self.get_parameter('z_drop').value
         normal_v   = self.get_parameter('normal_velocity').value
         approach_v = self.get_parameter('approach_velocity').value
-        z_drop     = self.get_parameter('z_drop').value
 
         def _gripper(open_: bool, next_cb):
             req = GripperControl.Request()
@@ -198,15 +198,15 @@ class TaskCoordinatorNode(Node):
         self._status('Opening gripper')
         _gripper(True, lambda: (
             self._status('Moving above pick position'),
-            _move(pick_x, pick_y, Z_SAFE, lambda: (
+            _move(pick_x, pick_y, z_safe, lambda: (
                 self._status('Descending to object'),
-                _move(pick_x, pick_y, Z_PICK, lambda: (
+                _move(pick_x, pick_y, z_pick, lambda: (
                     self._status('Gripping object'),
                     _gripper(False, lambda: (
                         self._status('Object secured — lifting'),
-                        _move(pick_x, pick_y, Z_SAFE, lambda: (
+                        _move(pick_x, pick_y, z_safe, lambda: (
                             self._status('Transiting to hand'),
-                            _move(drop_x, drop_y, Z_SAFE, lambda: (
+                            _move(drop_x, drop_y, z_safe, lambda: (
                                 self._status('Slowing for human approach'),
                                 _speed(approach_v, lambda: (
                                     self._status('Descending to hand'),
