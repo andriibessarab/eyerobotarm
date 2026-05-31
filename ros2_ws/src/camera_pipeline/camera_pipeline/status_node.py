@@ -11,7 +11,7 @@ from std_msgs.msg import Bool, Int32, String
 from pick_interfaces.msg import TagDetectionArray
 from geometry_msgs.msg import Point
 
-WIN_W, WIN_H = 640, 520
+WIN_W, WIN_H = 640, 545
 MAX_LOG      = 7
 FONT         = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -241,6 +241,16 @@ class StatusNode(Node):
             display = entry if len(entry) <= 58 else entry[:57] + '>'
             cv2.putText(canvas, display, (12, py), FONT, 0.4, col, 1, cv2.LINE_AA)
             py += 18
+
+        # ── Legend ────────────────────────────────────────────────────────
+        ly = WIN_H - 16
+        cv2.line(canvas, (0, ly - 8), (WIN_W, ly - 8), C_BORDER, 1)
+        legend = [((C_OK), 'Good'), (C_WARN2, 'Out of reach'), (C_FAIL, 'Not detected')]
+        lx = 10
+        for col, text in legend:
+            cv2.circle(canvas, (lx + 5, ly), 5, col, -1)
+            cv2.putText(canvas, text, (lx + 14, ly + 4), FONT, 0.35, C_DIM, 1, cv2.LINE_AA)
+            lx += cv2.getTextSize(text, FONT, 0.35, 1)[0][0] + 30
 
         cv2.imshow('S26 Status', canvas)
         if cv2.waitKey(1) & 0xFF == ord('q'):

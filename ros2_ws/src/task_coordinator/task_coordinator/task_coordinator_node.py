@@ -148,6 +148,9 @@ class TaskCoordinatorNode(Node):
                 self._status('Lifting away');        move(drop_x, drop_y, z_safe)
                 self._status('Closing gripper');     gripper(False)
                 self._status('Homing');              self._sync_call(self._home_cli, Trigger.Request())
+            except Exception as e:
+                self.get_logger().error(f'Pick-and-place failed: {e}')
+                self._status(f'ERROR: {e}')
             finally:
                 self._state = State.IDLE
                 self._status('Ready — waiting for next gaze lock')
