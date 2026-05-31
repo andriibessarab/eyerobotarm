@@ -22,16 +22,16 @@ class AprilTagGazeNode(Node):
     def __init__(self):
         super().__init__('apriltag_gaze_node')
 
-        self.declare_parameter('stare_time', 1.0)
-        self.declare_parameter('center_tolerance', 50)
+        self.declare_parameter('stare_time', 1.5)
+        self.declare_parameter('center_tolerance', 120)
 
         self._bridge = CvBridge()
 
         self._detector = Detector(
             families='tag36h11',
-            nthreads=1,
-            quad_decimate=2.0,
-            quad_sigma=0.0,
+            nthreads=2,
+            quad_decimate=1.0,
+            quad_sigma=0.8,
             refine_edges=1,
             decode_sharpening=0.25,
             debug=0,
@@ -39,6 +39,8 @@ class AprilTagGazeNode(Node):
 
         # [tag_id, x_distance, start_time] while accumulating; None when idle
         self._candidate = None
+        self._miss_count = 0
+        self._MISS_TOLERANCE = 5  # frames before candidate resets
 
         self._sub = self.create_subscription(
             Image, '/gaze_camera/image_raw', self._cb_frame, 10
@@ -68,10 +70,15 @@ class AprilTagGazeNode(Node):
 
         detections = self._detector.detect(gray)
 
-        # Drop candidate if its tag is no longer visible
+        # Drop candidate only after several consecutive missed frames
         visible_ids = [d.tag_id for d in detections]
         if self._candidate is not None and self._candidate[0] not in visible_ids:
-            self._candidate = None
+            self._miss_count += 1
+            if self._miss_count >= self._MISS_TOLERANCE:
+                self._candidate = None
+                self._miss_count = 0
+        else:
+            self._miss_count = 0
 
         frame_x_center = gray.shape[1] / 2
 
@@ -79,7 +86,7 @@ class AprilTagGazeNode(Node):
         best_x_dist  = float('inf')
 
         for detection in detections:
-            if detection.decision_margin < 10:
+            if detection.decision_margin < 5:
                 continue
 
             x_dist = math.fabs(detection.center[0] - frame_x_center)

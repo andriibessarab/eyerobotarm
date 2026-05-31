@@ -40,7 +40,7 @@ def generate_launch_description():
             executable='apriltag_gaze_node',
             name='apriltag_gaze',
             output='screen',
-            parameters=[{'stare_time': 2.0}],
+            parameters=[{'stare_time': 1.5}],
         ),
         Node(
             package='camera_pipeline',
