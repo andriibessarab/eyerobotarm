@@ -94,16 +94,21 @@ class ArmDetectionNode(Node):
             hand_landmarks = result.multi_hand_landmarks[0]  
 
             wrist = hand_landmarks.landmark[0]  
+            middle_tip = hand_landmarks.landmark[9]
 
-            x = wrist.x * width
-            y = wrist.y * height
 
+            x1 = wrist.x * width
+            y1 = wrist.y * height
+            x2 = middle_tip.x * width
+            y2 = middle_tip.y * height
+            palm_x = (x1 + x2) / 2
+            palm_y = (y1 + y2) / 2
 
             msg = Point()
-            msg.x = x
-            msg.y = y
-            msg.z = wrist.z
-            confidence = getattr(wrist, 'visibility', 1.0)
+            msg.x = palm_x
+            msg.y = palm_y
+    
+            confidence = 1
         
             self.get_logger().info(
                 f'publishing arm_position: x={msg.x:.1f} y={msg.y:.1f} z={msg.z:.3f} confidence={confidence:.2f}',
