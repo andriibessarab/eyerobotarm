@@ -65,7 +65,8 @@ class ArmDetectionNode(Node):
         self._sub = self.create_subscription(
             Image, 'workspace_camera/image_raw', self._cb_frame, 10
         )
-        self._pub = self.create_publisher(Point, '/workspace/arm_position', 10)
+        self._pub       = self.create_publisher(Point, '/workspace/arm_position',       10)
+        self._pub_pixel = self.create_publisher(Point, '/workspace/arm_position_pixel', 10)
 
         self.get_logger().info('arm_detection_node ready')
 
@@ -108,6 +109,11 @@ class ArmDetectionNode(Node):
                 throttle_duration_sec=1.0,
             )
             self._pub.publish(msg)
+
+            pixel_msg = Point()
+            pixel_msg.x = palm_x
+            pixel_msg.y = palm_y
+            self._pub_pixel.publish(pixel_msg)
         else:
             self.get_logger().warn(
                 'No hand detected in workspace_camera/image_raw',
