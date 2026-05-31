@@ -28,20 +28,34 @@ class AprilTagWorkspaceNode(Node):
         super().__init__('apriltag_workspace_node')
 
         self._bridge = CvBridge()
-        self.declare_parameter('april_tag_family', 'tag16h5')
-        self.declare_parameter('min_decision_margin', 20.0)
-        self._april_tag_family = self.get_parameter('april_tag_family').value
+
+        self.declare_parameter('april_tag_family',   'tag16h5')
+        self.declare_parameter('min_decision_margin', 50.0)   # raised from 20 — cuts false positives
+        self.declare_parameter('quad_decimate',       1.0)    # 1.0 = full res; default 2.0 kills small tags
+        self.declare_parameter('decode_sharpening',   0.8)    # higher helps decode small patches
+
+        self._april_tag_family    = self.get_parameter('april_tag_family').value
         self._min_decision_margin = float(self.get_parameter('min_decision_margin').value)
-        self.detector = Detector(families=self._april_tag_family)
+
+        self.detector = Detector(
+            families=self._april_tag_family,
+            quad_decimate=float(self.get_parameter('quad_decimate').value),
+            decode_sharpening=float(self.get_parameter('decode_sharpening').value),
+        )
         self.get_logger().info(
-            f'AprilTag detector family: {self._april_tag_family}, '
-            f'min decision margin: {self._min_decision_margin:.1f}'
+            f'AprilTag detector: family={self._april_tag_family} '
+            f'quad_decimate={self.get_parameter("quad_decimate").value} '
+            f'min_decision_margin={self._min_decision_margin:.0f}'
         )
 
-        h_path = PROVIDED_CODE / 'HomographyMatrix.npy'
+        h_path   = PROVIDED_CODE / 'HomographyMatrix.npy'
         cam_path = PROVIDED_CODE / 'camera_params.npz'
 
-        self._H = None
+        self._H              = None
+        self._camera_matrix  = None
+        self._dist_coeffs    = None
+        self._map1 = self._map2 = None
+
         if h_path.exists():
             self._H = np.load(str(h_path))
             self.get_logger().info('Loaded HomographyMatrix.npy')
@@ -49,6 +63,9 @@ class AprilTagWorkspaceNode(Node):
             self.get_logger().warn(f'HomographyMatrix.npy not found at {h_path}')
 
         if cam_path.exists():
+            data = np.load(str(cam_path))
+            self._camera_matrix = data['camera_matrix']
+            self._dist_coeffs   = data['dist_coeffs']
             self.get_logger().info('Loaded camera_params.npz')
         else:
             self.get_logger().warn(f'camera_params.npz not found at {cam_path}')
@@ -74,6 +91,18 @@ class AprilTagWorkspaceNode(Node):
             return
 
         gray = cv2.cvtColor(self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8'), cv2.COLOR_BGR2GRAY)
+
+        # Build undistort maps on first frame once dimensions are known
+        if self._map1 is None and self._camera_matrix is not None:
+            h, w = gray.shape
+            new_K, _ = cv2.getOptimalNewCameraMatrix(
+                self._camera_matrix, self._dist_coeffs, (w, h), 1)
+            self._map1, self._map2 = cv2.initUndistortRectifyMap(
+                self._camera_matrix, self._dist_coeffs, None, new_K, (w, h), cv2.CV_16SC2)
+
+        if self._map1 is not None:
+            gray = cv2.remap(gray, self._map1, self._map2, cv2.INTER_LINEAR)
+
         tags = self.detector.detect(gray)
         self.get_logger().info(
             f'AprilTag detections in frame: {len(tags)}',
@@ -87,7 +116,7 @@ class AprilTagWorkspaceNode(Node):
             robot_x, robot_y = self._pixel_to_robot(float(tag.center[0]), float(tag.center[1]))
 
             t = TagDetection()
-            t.tag_id = int(tag.tag_id)
+            t.tag_id  = int(tag.tag_id)
             t.pixel_x = float(tag.center[0])
             t.pixel_y = float(tag.center[1])
             t.robot_x = robot_x
