@@ -1,3 +1,5 @@
+import threading
+
 import cv2
 import rclpy
 from cv_bridge import CvBridge
@@ -6,15 +8,6 @@ from sensor_msgs.msg import Image
 
 
 class GazeCameraNode(Node):
-    """Publishes frames from the glasses-mounted (gaze) camera.
-
-    Two modes (mutually exclusive):
-    - camera_source: device index string ('0', '1') or URL — opens VideoCapture
-    - camera_topic:  if non-empty, relays an existing image topic instead
-                     (useful for local testing: point at /workspace_camera/image_raw)
-
-    camera_topic takes priority when set.
-    """
 
     def __init__(self):
         super().__init__('gaze_camera_node')
@@ -30,6 +23,8 @@ class GazeCameraNode(Node):
         self._bridge = CvBridge()
         self._pub = self.create_publisher(Image, '/gaze_camera/image_raw', 10)
         self._cap = None
+        self._latest_frame = None
+        self._frame_lock = threading.Lock()
 
         if topic:
             self.create_subscription(Image, topic, self._relay, 10)
@@ -42,19 +37,23 @@ class GazeCameraNode(Node):
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             if not self._cap.isOpened():
                 self.get_logger().warn(f'Could not open camera_source: {src}')
-            self.create_timer(1.0 / 30.0, self._capture)
+            # Background thread drains stream buffer continuously
+            threading.Thread(target=self._drain_loop, daemon=True).start()
+            # Publish at 30Hz from latest frame
+            self.create_timer(1.0 / 30.0, self._publish_latest)
             self.get_logger().info(f'gaze_camera_node ready (camera_source={src})')
 
-    def _relay(self, msg: Image):
-        """Re-stamp and republish an incoming image on the gaze topic."""
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'gaze_camera'
-        self._pub.publish(msg)
+    def _drain_loop(self):
+        while rclpy.ok():
+            ret, frame = self._cap.read()
+            if ret:
+                with self._frame_lock:
+                    self._latest_frame = frame
 
-    def _capture(self):
-        ret, frame = self._cap.read()
-        if not ret:
-            self.get_logger().warn('gaze_camera: failed to read frame', throttle_duration_sec=5.0)
+    def _publish_latest(self):
+        with self._frame_lock:
+            frame = self._latest_frame
+        if frame is None:
             return
         flip_h = self.get_parameter('flip_horizontal').value
         flip_v = self.get_parameter('flip_vertical').value
@@ -65,6 +64,11 @@ class GazeCameraNode(Node):
         elif flip_v:
             frame = cv2.flip(frame, 0)
         msg = self._bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'gaze_camera'
+        self._pub.publish(msg)
+
+    def _relay(self, msg: Image):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'gaze_camera'
         self._pub.publish(msg)
