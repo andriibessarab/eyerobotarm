@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-S26 Toyota Innovation Challenge — a collaborative robotics system where a Dobot Magician arm works alongside human workers to pick and place parts (velcro tags, 3D-printed brake calipers). The system uses an Orbbec overhead camera for workspace detection and a gaze camera for worker intent detection via AprilTag gaze locking.
+S26 Toyota Innovation Challenge — a collaborative robotics system where a Dobot Magician arm works alongside human workers to pick and place parts (velcro tags, 3D-printed brake calipers). The system uses an Orbbec overhead camera for workspace detection and a Pi-mounted gaze camera for worker intent detection via AprilTag gaze locking.
 
 Two parallel codebases:
 - **`provided_code/`** — standalone Python scripts (no ROS2) that are the ground-truth for calibration and CV logic.
@@ -33,34 +33,69 @@ ros2 run dobot_arm dobot_arm_node
 ros2 run task_coordinator task_coordinator_node
 ```
 
+### Pi gaze camera (deploy to Pi Zero 2W)
+
+```bash
+# On the Pi — streams MJPEG over HTTP on port 8080
+python3 pi_scripts/stream_camera.py
+# Access from main computer: http://192.168.8.2:8080/stream.mjpg
+```
+
 ### Standalone provided_code (calibration / legacy)
 
 ```bash
 cd provided_code
 python calibrateCamera.py             # one-time intrinsic calibration
 python getTransformationMatrix_linux.py  # Linux homography generation
-python getTransformationMatrix.py     # Windows homography generation
 python pickCVBlock.py                 # standalone pick-place loop
 ```
 
 ## Architecture
 
-### ROS2 node graph
+### System flow
 
 ```
-workspace_camera_node ──► /workspace_camera/image_raw ──┬──► apriltag_workspace_node ──► /workspace/tag_detections
-                                                         ├──► arm_detection_node ──────► /workspace/arm_position
-                                                         └──► preview_node (debug window)
-
-gaze_camera_node ──────► /gaze_camera/image_raw ──────────► apriltag_gaze_node ──────► /gaze/gazed_tag_id (Int32)
-
-/gaze/gazed_tag_id ──────────────────────────────────────┐
-/workspace/tag_detections ───────────────────────────────┼──► task_coordinator_node ──► dobot_arm_node
-/workspace/arm_position ─────────────────────────────────┘        ~/move_to_xyz
-                                                                   ~/move_joints
-                                                                   ~/gripper_control
-                                                                   ~/home
-                                                                   ~/rotate_end_effector
+┌────────────────────────────────────────────────────────────────────┐
+│                          HARDWARE                                   │
+│  Pi Camera (glasses) ──► gaze_camera_node (/gaze_camera/image_raw) │
+│  Orbbec (overhead)   ──► workspace_camera_node                     │
+│                             (/workspace_camera/image_raw)           │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                 ▼
+   apriltag_gaze_node  apriltag_workspace_node  arm_detection_node
+   (tag16h5, 3s lock)  (tag→robot XY via H)    (wrist→robot XY via H)
+              │                │                 │
+   /gaze/gazed_tag_id  /workspace/tag_detections /workspace/arm_position
+   (Int32, fires once)  (TagDetectionArray)       (Point, robot mm)
+              │                │                 │
+              └────────────────▼─────────────────┘
+                        task_coordinator_node
+                               │
+                        VALIDATE both:
+                        ① tag visible in overhead AND in reach?
+                        ② hand visible in overhead AND in reach?
+                               │ fail → IDLE + warn
+                               ▼ pass
+                          EXECUTING:
+                          1. open gripper
+                          2. move above pick       ← normal speed (50%)
+                          3. descend to object     ← normal speed
+                          4. close gripper
+                          5. lift to Z_SAFE
+                          6. move above hand       ← normal speed
+                          7. reduce to 20% speed
+                          8. descend to hand       ← slow (near human)
+                          9. open gripper
+                         10. restore speed → home → IDLE
+                               │
+                               ▼
+                         dobot_arm_node
+                         (pydobot, /dev/ttyUSB0)
+                         services: move_to_xyz, gripper_control,
+                                   home, set_speed, move_joints,
+                                   rotate_end_effector
 ```
 
 ### Packages
@@ -75,49 +110,52 @@ gaze_camera_node ──────► /gaze_camera/image_raw ──────
 ### Custom interfaces (`pick_interfaces`)
 
 **Messages**
-- `ObjectDetection.msg` — `header`, `label`, `pixel_x/y`, `robot_x/y`, `confidence`
-- `RobotPose.msg` — `x/y/z/r`, `j1/j2/j3/j4`
 - `TagDetection.msg` — `tag_id`, `pixel_x/y`, `robot_x/y`
 - `TagDetectionArray.msg` — array of `TagDetection`
+- `RobotPose.msg` — `x/y/z/r`, `j1/j2/j3/j4`
 
 **Services**
 - `MoveToXYZ.srv` — `x, y, z, r_head → success, message`
 - `MoveJoints.srv` — `j1, j2, j3, j4 → success, message`
 - `GripperControl.srv` — `open (bool) → success`
-- `PickAndPlace.srv` — `pick_x/y, drop_x/y → success, message`
+- `SetSpeed.srv` — `velocity, acceleration (1–100%) → success`
+- `PickAndPlace.srv` — defined but not used; orchestration is in task_coordinator
 
 ### Hardware layer
 
-`dobot_arm/dobot_hardware.py` wraps `pydobot` (Linux-compatible, no DLL needed). Serial port defaults to `/dev/ttyUSB0`; override via the `serial_port` ROS parameter. `HOME_POS = (200.0, 100.0, 50.0, 0.0)`.
-
-The `provided_code/lib/DobotDll.dll` is Windows-only and is NOT used by the ROS2 stack.
+`dobot_arm/dobot_hardware.py` wraps `pydobot` (Linux-compatible). Serial port defaults to `/dev/ttyUSB0`; override via the `serial_port` ROS parameter. `HOME_POS = (200.0, 100.0, 50.0, 0.0)` mm.
 
 ### Coordinate system & calibration files
 
 - `provided_code/HomographyMatrix.npy` — maps camera pixel coords to robot XY (mm). Regenerate with `getTransformationMatrix_linux.py` when camera/arm is repositioned.
-- `provided_code/H_matrix.json` — same homography in JSON (alternate format).
 - `provided_code/camera_params.npz` — intrinsic camera matrix + distortion coeffs. Regenerate with `calibrateCamera.py` only when switching cameras.
-- All nodes that need calibration load these files at startup via the `PROVIDED_CODE_PATH` env var (defaults to `../provided_code` relative to the node file). A warning is logged if files are missing; detection is silently skipped.
+- All nodes load these at startup via the `PROVIDED_CODE_PATH` env var (set automatically by `system.launch.py`). A warning is logged if files are missing.
 
-### Key constants (`task_coordinator_node.py`)
+### Key constants
 
 ```python
 Z_SAFE = 40.0   # mm — clearance height for horizontal moves
 Z_PICK = -25.0  # mm — height to grip object
+Z_DROP = 0.0    # mm — height to release into hand (ROS param, tunable)
 ```
 
-### Pick-and-place flow
+### task_coordinator_node parameters
 
-`task_coordinator_node` state machine: `IDLE → EXECUTING → IDLE`.
+| Parameter | Default | Description |
+|---|---|---|
+| `min_reach_mm` | `135.0` | Inner Dobot workspace bound (mm from base) |
+| `max_reach_mm` | `320.0` | Outer Dobot workspace bound |
+| `z_drop` | `0.0` | Z height (mm) for releasing into hand |
+| `normal_velocity` | `50` | Arm speed % during pick and transit |
+| `approach_velocity` | `20` | Arm speed % during final descent to hand |
+| `exec_timeout` | `15.0` | Seconds before stuck EXECUTING resets to IDLE |
 
-Trigger: `apriltag_gaze_node` publishes a non-negative `tag_id` on `/gaze/gazed_tag_id` when a tag has been stably gazed at. The coordinator looks up the matching tag's robot XY in `/workspace/tag_detections` (from `apriltag_workspace_node`), uses the latest `/workspace/arm_position` as the drop target (falls back to `drop_fallback_x/y` params), then chains async service calls: open gripper → move safe → move pick → close gripper → lift safe → move drop → open gripper → home.
-
-## What is stubbed / needs implementation
+## Node status
 
 | Node | Status |
 |---|---|
-| `arm_detection_node.py` | Working — wrist tracking via MediaPipe Hands |
-| `dobot_arm_node.py` | Working — uses `pydobot` via `dobot_hardware.py` |
-| `task_coordinator_node.py` | Working — full async pick-and-place chain implemented |
-| `apriltag_gaze_node.py` | **TODO** — `_cb_frame` stub; needs `cv2.aruco.detectMarkers` + stability counter |
-| `apriltag_workspace_node.py` | **TODO** — `_cb_frame` stub; needs detection + publish `TagDetectionArray` |
+| `dobot_arm_node.py` | Working — pydobot, set_speed service added |
+| `task_coordinator_node.py` | Working — validation, slow approach, watchdog |
+| `apriltag_gaze_node.py` | Working — cv2.aruco DICT_APRILTAG_16h5, 3s lock |
+| `arm_detection_node.py` | In progress (another developer) |
+| `apriltag_workspace_node.py` | In progress (another developer) |

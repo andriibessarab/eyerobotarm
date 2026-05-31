@@ -40,5 +40,9 @@ def close_gripper(dobot: Dobot):
     dobot.grip(True)
 
 
+def set_speed(dobot: Dobot, velocity: int, acceleration: int):
+    dobot.speed(velocity=velocity, acceleration=acceleration)
+
+
 def get_pose(dobot: Dobot) -> tuple:
     return dobot.pose()  # (x, y, z, r, j1, j2, j3, j4)

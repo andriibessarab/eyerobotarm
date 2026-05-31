@@ -22,10 +22,9 @@ import io
 import threading
 from http import server
 
-# TODO: uncomment on actual Pi hardware
-# from picamera2 import Picamera2
-# from picamera2.encoders import MJPEGEncoder
-# from picamera2.outputs import FileOutput
+from picamera2 import Picamera2
+from picamera2.encoders import MJPEGEncoder
+from picamera2.outputs import FileOutput
 
 PORT = 8080
 RESOLUTION = (640, 480)
@@ -88,12 +87,11 @@ output = StreamOutput()
 
 
 def main():
-    # TODO: uncomment on actual Pi hardware
-    # picam2 = Picamera2()
-    # picam2.configure(picam2.create_video_configuration(
-    #     main={'size': RESOLUTION, 'format': 'RGB888'},
-    # ))
-    # picam2.start_recording(MJPEGEncoder(), FileOutput(output))
+    picam2 = Picamera2()
+    picam2.configure(picam2.create_video_configuration(
+        main={'size': RESOLUTION, 'format': 'RGB888'},
+    ))
+    picam2.start_recording(MJPEGEncoder(), FileOutput(output))
 
     addr = ('', PORT)
     httpd = server.HTTPServer(addr, StreamHandler)
@@ -101,8 +99,7 @@ def main():
     try:
         httpd.serve_forever()
     finally:
-        pass
-        # picam2.stop_recording()
+        picam2.stop_recording()
 
 
 if __name__ == '__main__':

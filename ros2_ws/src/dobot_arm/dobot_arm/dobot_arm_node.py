@@ -3,7 +3,7 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 
 from pick_interfaces.msg import RobotPose
-from pick_interfaces.srv import GripperControl, MoveJoints, MoveToXYZ
+from pick_interfaces.srv import GripperControl, MoveJoints, MoveToXYZ, SetSpeed
 
 from dobot_arm import dobot_hardware
 
@@ -30,6 +30,7 @@ class DobotArmNode(Node):
         self.create_service(GripperControl, '~/gripper_control', self._cb_gripper_control)
         self.create_service(Trigger, '~/home', self._cb_home)
         self.create_service(Trigger, '~/rotate_end_effector', self._cb_rotate_end_effector)
+        self.create_service(SetSpeed, '~/set_speed', self._cb_set_speed)
 
         self.get_logger().info('dobot_arm_node ready')
 
@@ -99,6 +100,16 @@ class DobotArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
+        return response
+
+    def _cb_set_speed(self, request, response):
+        self.get_logger().info(f'set_speed: velocity={request.velocity} acceleration={request.acceleration}')
+        try:
+            dobot_hardware.set_speed(self.dobot, request.velocity, request.acceleration)
+            response.success = True
+        except Exception as e:
+            self.get_logger().error(str(e))
+            response.success = False
         return response
 
     def _cb_rotate_end_effector(self, request, response):

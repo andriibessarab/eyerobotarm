@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/MoveJoints.srv"
   "srv/GripperControl.srv"
   "srv/PickAndPlace.srv"
+  "srv/SetSpeed.srv"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

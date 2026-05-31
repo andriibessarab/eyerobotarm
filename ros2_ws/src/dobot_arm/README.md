@@ -118,6 +118,21 @@ ros2 service call /dobot_arm_node/gripper_control \
 
 ---
 
+### `/dobot_arm_node/set_speed`
+
+Set arm velocity and acceleration. Called by `task_coordinator_node` before the slow final approach to the human hand.
+
+- **Type:** `pick_interfaces/srv/SetSpeed`
+- **Request:** `velocity` (int32, 1–100 %), `acceleration` (int32, 1–100 %)
+- **Response:** `success` (bool)
+
+```bash
+ros2 service call /dobot_arm_node/set_speed \
+  pick_interfaces/srv/SetSpeed "{velocity: 20, acceleration: 20}"
+```
+
+---
+
 ### `/dobot_arm_node/rotate_end_effector`
 
 Rotate the end effector to the angle set in the `rotate_angle` parameter. Valid range: −90° to +90°. The arm holds its current XY position and only changes the R axis.
