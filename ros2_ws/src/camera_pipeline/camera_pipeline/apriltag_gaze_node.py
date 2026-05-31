@@ -63,6 +63,7 @@ class AprilTagGazeNode(Node):
         center_tolerance = self.get_parameter('center_tolerance').value
 
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        frame = cv2.flip(frame, -1)
         gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         detections = self._detector.detect(gray)

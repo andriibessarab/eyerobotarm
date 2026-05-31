@@ -33,8 +33,8 @@ class StatusNode(Node):
         self._log: deque[str] = deque(maxlen=MAX_LOG)
         self._latest_status = ''
 
-        self.create_subscription(String, '/task_coordinator_node/state',  self._cb_state,  10)
-        self.create_subscription(String, '/task_coordinator_node/status', self._cb_status, 10)
+        self.create_subscription(String, '/coordinator/state',  self._cb_state,  10)
+        self.create_subscription(String, '/coordinator/status', self._cb_status, 10)
         self.create_subscription(Int32,  '/gaze/gazed_tag_id',            self._cb_gaze,   10)
 
         self.create_timer(1.0 / 30.0, self._draw)

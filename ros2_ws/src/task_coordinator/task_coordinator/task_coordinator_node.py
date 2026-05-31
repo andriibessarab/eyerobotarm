@@ -74,7 +74,47 @@ class TaskCoordinatorNode(Node):
         self._home_cli      = self.create_client(Trigger,        '/dobot_arm_node/home')
         self._set_speed_cli = self.create_client(SetSpeed,       '/dobot_arm_node/set_speed')
 
-        self._status('Waiting for gaze lock')
+        self._status('Waiting for arm...')
+        self.create_timer(0.5, self._startup_check)
+
+    # -----------------------------------------------------------------------
+    # Startup arm check
+    # -----------------------------------------------------------------------
+
+    def _startup_check(self):
+        self.destroy_timer(self._startup_timer if hasattr(self, '_startup_timer') else None)
+        # Only run once
+        if hasattr(self, '_startup_done'):
+            return
+        self._startup_done = True
+
+        services_ready = all(
+            cli.wait_for_service(timeout_sec=0.1)
+            for cli in [self._gripper_cli, self._home_cli]
+        )
+        if not services_ready:
+            self._status('Arm not ready yet — retrying...')
+            self.create_timer(1.0, self._startup_check)
+            return
+
+        self._status('Arm check: open gripper')
+
+        def _open_done(_):
+            self._status('Arm check: close gripper')
+            req = GripperControl.Request()
+            req.open = False
+            self._gripper_cli.call_async(req).add_done_callback(_close_done)
+
+        def _close_done(_):
+            self._status('Arm check: homing')
+            self._home_cli.call_async(Trigger.Request()).add_done_callback(_home_done)
+
+        def _home_done(_):
+            self._status('Arm ready — waiting for gaze lock')
+
+        req = GripperControl.Request()
+        req.open = True
+        self._gripper_cli.call_async(req).add_done_callback(_open_done)
 
     # -----------------------------------------------------------------------
     # Status helper
@@ -136,6 +176,18 @@ class TaskCoordinatorNode(Node):
             return
 
         drop_x, drop_y = self._latest_arm.x, self._latest_arm.y
+
+        # --- check arm services are up ---
+        for cli, name in [
+            (self._move_xyz_cli, 'move_to_xyz'),
+            (self._gripper_cli,  'gripper_control'),
+            (self._home_cli,     'home'),
+            (self._set_speed_cli,'set_speed'),
+        ]:
+            if not cli.wait_for_service(timeout_sec=1.0):
+                self.get_logger().warn(f'Arm service {name} not available — is dobot_arm_node running?')
+                self._status(f'ERROR: arm service {name} unavailable')
+                return
 
         self._status(
             f'Gaze locked tag {tag_id} — pick ({pick_x:.0f}, {pick_y:.0f}) '

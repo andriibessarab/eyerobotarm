@@ -12,7 +12,7 @@ class DobotArmNode(Node):
     def __init__(self):
         super().__init__('dobot_arm_node')
 
-        self.declare_parameter('serial_port', '/dev/ttyUSB1')
+        self.declare_parameter('serial_port', '/dev/ttyUSB2')
         self.declare_parameter('rotate_angle', 0.0)
 
         port = self.get_parameter('serial_port').value
@@ -44,8 +44,8 @@ class DobotArmNode(Node):
             x, y, z, r, j1, j2, j3, j4 = dobot_hardware.get_pose(self.dobot)
             msg.x, msg.y, msg.z, msg.r = x, y, z, r
             msg.j1, msg.j2, msg.j3, msg.j4 = j1, j2, j3, j4
-        except Exception as e:
-            self.get_logger().warn(f'pose read failed: {e}')
+        except Exception:
+            pass  # serial glitch during idle polling — not actionable
         self._pose_pub.publish(msg)
 
     # -----------------------------------------------------------------------

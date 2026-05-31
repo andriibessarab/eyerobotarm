@@ -13,7 +13,7 @@ def generate_launch_description():
             package='dobot_arm',
             executable='dobot_arm_node',
             output='screen',
-            parameters=[{'serial_port': '/dev/ttyUSB1'}],
+            parameters=[{'serial_port': '/dev/ttyUSB2'}],
         ),
         Node(
             package='camera_pipeline',
@@ -40,6 +40,7 @@ def generate_launch_description():
             executable='apriltag_gaze_node',
             name='apriltag_gaze',
             output='screen',
+            parameters=[{'stare_time': 2.0}],
         ),
         Node(
             package='camera_pipeline',
@@ -56,6 +57,11 @@ def generate_launch_description():
         Node(
             package='camera_pipeline',
             executable='status_node',
+            output='screen',
+        ),
+        Node(
+            package='camera_pipeline',
+            executable='preview_node',
             output='screen',
         ),
     ])

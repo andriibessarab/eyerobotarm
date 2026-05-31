@@ -60,7 +60,7 @@ class PreviewNode(Node):
         self.create_subscription(Image, '/gaze_camera/image_raw',          self._cb_gaze,       10)
         self.create_subscription(Point, '/workspace/arm_position_pixel',   self._cb_arm_pixel,  10)
         self.create_subscription(TagDetectionArray, '/workspace/tag_detections', self._cb_tags, 10)
-        self.create_subscription(Int32, '/apriltag_gaze_node/tracking',    self._cb_tracking,   10)
+        self.create_subscription(Int32, '/apriltag_gaze/tracking',    self._cb_tracking,   10)
         self.create_subscription(Int32, '/gaze/gazed_tag_id',              self._cb_locked,     10)
 
         self.create_timer(1.0 / 30.0, self._draw)
