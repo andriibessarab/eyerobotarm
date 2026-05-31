@@ -49,7 +49,7 @@ ROBOT_POINTS = np.array([
     [180,  60], [210,  60], [240,  60],
 ], dtype=np.float32)
 
-Z_CAL   = -24   # mm — height at which robot tip touches table surface
+Z_CAL   = -19   # mm — height at which robot tip touches table surface
 Z_CLEAR = 80    # mm — safe height to move arm out of camera view
 
 # -----------------------------------------------------------------------
@@ -161,12 +161,15 @@ def collect_calibration(robot: Dobot) -> np.ndarray:
         print('  Robot at position. Press SPACE to swing base 90° out of the way.')
         _wait_for_space(f'Pt {i+1}/{len(ROBOT_POINTS)} ({rx:.0f},{ry:.0f})mm — SPACE to swing')
 
-        # 3. Swing base 90° so arm clears the camera view of the tip mark
+        # 3. Lift straight up first so the tip doesn't drag across the table
+        _move(robot, rx, ry, Z_CLEAR)
         pose = robot.pose()  # (x, y, z, r, j1, j2, j3, j4)
         j1_cal, j2, j3, j4 = pose[4], pose[5], pose[6], pose[7]
+
+        # 4. Now swing base 90° — tip is clear of the table
         _move_joints(robot, j1_cal + 90.0, j2, j3, j4)
 
-        # 4. User places red marker; capture when detected
+        # 5. User places red marker; capture when detected
         print('  Place a RED marker exactly where the tip was.')
         print('  SPACE to capture once the green dot appears on the marker.')
 
@@ -201,7 +204,7 @@ def collect_calibration(robot: Dobot) -> np.ndarray:
                 cv2.destroyAllWindows()
                 sys.exit(0)
 
-        # 5. Swing base back before moving to next point
+        # 6. Swing base back before moving to next point
         _move_joints(robot, j1_cal, j2, j3, j4)
 
     return np.array(pixel_points, dtype=np.float32)
