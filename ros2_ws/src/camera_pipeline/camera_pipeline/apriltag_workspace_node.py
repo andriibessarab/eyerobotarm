@@ -13,7 +13,7 @@ from pupil_apriltags import Detector
 
 from pick_interfaces.msg import TagDetection, TagDetectionArray
 
-_default = Path(__file__).resolve().parents[4] / 'provided_code'
+_default = Path(__file__).resolve().parents[4] / 'scripts'
 PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
 sys.path.insert(0, str(PROVIDED_CODE))
 

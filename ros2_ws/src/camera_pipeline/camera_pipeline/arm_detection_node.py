@@ -14,7 +14,7 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from std_msgs.msg import Bool
 
-_default = Path(__file__).resolve().parents[4] / 'provided_code'
+_default = Path(__file__).resolve().parents[4] / 'scripts'
 PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
 sys.path.insert(0, str(PROVIDED_CODE))
 

@@ -7,7 +7,7 @@ def generate_launch_description():
     return LaunchDescription([
         SetEnvironmentVariable(
             'PROVIDED_CODE_PATH',
-            '/home/andriibessarab/Desktop/S26-Toyota-Innovation-Challenge/provided_code',
+            '/home/andriibessarab/Desktop/S26-Toyota-Innovation-Challenge/ros2_ws/scripts',
         ),
         SetEnvironmentVariable('QT_QPA_PLATFORM', 'xcb'),
         Node(
