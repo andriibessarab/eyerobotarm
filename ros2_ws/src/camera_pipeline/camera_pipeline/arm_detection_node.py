@@ -18,17 +18,11 @@ sys.path.insert(0, str(PROVIDED_CODE))
 
 class ArmDetectionNode(Node):
     """
-    Subscribes to the overhead workspace camera, detects the human hand/wrist
-    using MediaPipe Hands, converts the wrist pixel position to robot XY via
-    the homography matrix, and publishes a geometry_msgs/Point.
-
-    Only publishes when a hand is confidently detected.
-
-    TODO: implement detection in _cb_frame
-      1. undistort frame (lazy)
-      2. mediapipe.solutions.hands.Hands.process(frame_rgb)
-      3. if landmarks: wrist = landmark[0] → pixel_to_robot → publish Point
-      fallback: skin-HSV blob detection if mediapipe unavailable
+    Subscribes to the overhead workspace camera, detects the human hand using
+    MediaPipe Hands, estimates the palm centre as the midpoint of wrist (0) and
+    middle-finger MCP (9), converts to robot XY via the homography matrix, and
+    publishes a geometry_msgs/Point. Only publishes when a hand is detected and
+    the homography is loaded.
     """
 
     def __init__(self):
@@ -73,7 +67,7 @@ class ArmDetectionNode(Node):
         )
         self._pub = self.create_publisher(Point, '/workspace/arm_position', 10)
 
-        self.get_logger().info('arm_detection_node ready (TODO: detection not yet implemented)')
+        self.get_logger().info('arm_detection_node ready')
 
     def _pixel_to_robot(self, u: float, v: float):
         p = np.array([u, v, 1.0])
@@ -82,7 +76,8 @@ class ArmDetectionNode(Node):
         return float(xy[0]), float(xy[1])
 
     def _cb_frame(self, msg: Image):
-      
+        if self._H is None:
+            return
 
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -91,18 +86,16 @@ class ArmDetectionNode(Node):
         result = self.hands.process(rgb)
 
         if result.multi_hand_landmarks:
-            hand_landmarks = result.multi_hand_landmarks[0]  
+            hand_landmarks = result.multi_hand_landmarks[0]
 
-            wrist = hand_landmarks.landmark[0]  
+            wrist      = hand_landmarks.landmark[0]
+            middle_mcp = hand_landmarks.landmark[9]
 
-            x = wrist.x * width
-            y = wrist.y * height
+            # Palm centre: midpoint of wrist and middle-finger MCP
+            palm_x = ((wrist.x + middle_mcp.x) / 2) * width
+            palm_y = ((wrist.y + middle_mcp.y) / 2) * height
 
-
-            if self._H is None:
-                return
-
-            robot_x, robot_y = self._pixel_to_robot(x, y)
+            robot_x, robot_y = self._pixel_to_robot(palm_x, palm_y)
             confidence = getattr(wrist, 'visibility', 1.0)
 
             msg = Point()
@@ -111,17 +104,15 @@ class ArmDetectionNode(Node):
             msg.z = 0.0
 
             self.get_logger().info(
-                f'publishing arm_position: robot=({robot_x:.1f}, {robot_y:.1f}) mm confidence={confidence:.2f}',
+                f'arm_position: robot=({robot_x:.1f}, {robot_y:.1f}) mm  confidence={confidence:.2f}',
                 throttle_duration_sec=1.0,
             )
             self._pub.publish(msg)
         else:
-            self.get_logger().warn('No hand detected in workspace_camera/image_raw', throttle_duration_sec=2.0)
-
-
-        
-        
-    
+            self.get_logger().warn(
+                'No hand detected in workspace_camera/image_raw',
+                throttle_duration_sec=2.0,
+            )
 
 
 def main(args=None):
