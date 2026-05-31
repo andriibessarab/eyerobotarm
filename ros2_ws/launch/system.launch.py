@@ -20,14 +20,14 @@ def generate_launch_description():
             executable='workspace_camera_node',
             name='workspace_camera',
             output='screen',
-            parameters=[{'camera_index': 0}],
+            parameters=[{'camera_source': '0'}],
         ),
         Node(
             package='camera_pipeline',
             executable='gaze_camera_node',
             name='gaze_camera',
             output='screen',
-            parameters=[{'camera_source': '1'}],
+            parameters=[{'camera_source': 'http://192.168.8.2:8080/stream.mjpg'}],
         ),
         Node(
             package='camera_pipeline',

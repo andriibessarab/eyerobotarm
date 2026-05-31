@@ -13,7 +13,7 @@ Captures frames from the overhead fixed camera (the one with a computed homograp
 | | |
 |---|---|
 | **Publishes** | `/workspace_camera/image_raw` (`sensor_msgs/Image`, bgr8) |
-| **Parameter** | `camera_index` (int, default `0`) — `cv2.VideoCapture` index |
+| **Parameter** | `camera_source` (string, default `'0'`) — device index or URL |
 
 ---
 

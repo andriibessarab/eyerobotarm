@@ -6,24 +6,27 @@ from sensor_msgs.msg import Image
 
 
 class WorkspaceCameraNode(Node):
-    """Publishes frames from the overhead/fixed camera (the one with the homography matrix)."""
+    """Publishes frames from the overhead Orbbec camera.
+
+    camera_source accepts a device index string ('0', '1', ...) or a URL.
+    """
 
     def __init__(self):
         super().__init__('workspace_camera_node')
 
-        self.declare_parameter('camera_index', 0)
-        idx = self.get_parameter('camera_index').get_parameter_value().integer_value
+        self.declare_parameter('camera_source', '0')
+        src = self.get_parameter('camera_source').get_parameter_value().string_value
 
         self._bridge = CvBridge()
         self._pub = self.create_publisher(Image, '/workspace_camera/image_raw', 10)
 
-        self._cap = cv2.VideoCapture(idx)
+        self._cap = cv2.VideoCapture(int(src) if src.isdigit() else src)
         if not self._cap.isOpened():
-            self.get_logger().warn(f'Camera index {idx} could not be opened')
+            self.get_logger().warn(f'Could not open camera_source: {src}')
 
         self._timer = self.create_timer(1.0 / 30.0, self._capture)  # 30 Hz
 
-        self.get_logger().info(f'workspace_camera_node ready (camera_index={idx})')
+        self.get_logger().info(f'workspace_camera_node ready (camera_source={src})')
 
     def _capture(self):
         ret, frame = self._cap.read()
