@@ -6,24 +6,28 @@ from sensor_msgs.msg import Image
 
 
 class GazeCameraNode(Node):
-    """Publishes frames from the glasses-mounted (gaze) camera."""
+    """Publishes frames from the glasses-mounted (gaze) camera.
+
+    camera_source accepts an integer device index ('0', '1', ...) or a full
+    URL string (e.g. 'http://192.168.8.2:8080/stream.mjpg' for the Pi stream).
+    """
 
     def __init__(self):
         super().__init__('gaze_camera_node')
 
-        self.declare_parameter('camera_index', 1)
-        idx = self.get_parameter('camera_index').get_parameter_value().integer_value
+        self.declare_parameter('camera_source', '1')
+        src = self.get_parameter('camera_source').get_parameter_value().string_value
 
         self._bridge = CvBridge()
         self._pub = self.create_publisher(Image, '/gaze_camera/image_raw', 10)
 
-        self._cap = cv2.VideoCapture(idx)
+        self._cap = cv2.VideoCapture(int(src) if src.isdigit() else src)
         if not self._cap.isOpened():
-            self.get_logger().warn(f'Camera index {idx} could not be opened')
+            self.get_logger().warn(f'Could not open camera_source: {src}')
 
         self._timer = self.create_timer(1.0 / 30.0, self._capture)  # 30 Hz
 
-        self.get_logger().info(f'gaze_camera_node ready (camera_index={idx})')
+        self.get_logger().info(f'gaze_camera_node ready (camera_source={src})')
 
     def _capture(self):
         ret, frame = self._cap.read()

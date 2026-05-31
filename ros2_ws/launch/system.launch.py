@@ -1,13 +1,17 @@
 from launch import LaunchDescription
+from launch.actions import SetEnvironmentVariable
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     return LaunchDescription([
+        SetEnvironmentVariable(
+            'PROVIDED_CODE_PATH',
+            '/home/andriibessarab/Desktop/eyerobotarm/provided_code',
+        ),
         Node(
             package='dobot_arm',
             executable='dobot_arm_node',
-            name='dobot_arm',
             output='screen',
             parameters=[{'serial_port': '/dev/ttyUSB0'}],
         ),
@@ -16,7 +20,7 @@ def generate_launch_description():
             executable='workspace_camera_node',
             name='workspace_camera',
             output='screen',
-            parameters=[{'camera_source': '0'}],
+            parameters=[{'camera_index': 0}],
         ),
         Node(
             package='camera_pipeline',

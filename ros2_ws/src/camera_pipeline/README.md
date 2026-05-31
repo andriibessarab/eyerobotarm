@@ -24,9 +24,7 @@ Captures frames from the glasses-mounted gaze camera and publishes them at 30 Hz
 | | |
 |---|---|
 | **Publishes** | `/gaze_camera/image_raw` (`sensor_msgs/Image`, bgr8) |
-| **Parameter** | `camera_index` (int, default `1`) — `cv2.VideoCapture` index |
-
-> **Pi stream note:** to read from the Pi camera over USB-Ethernet (`http://192.168.8.2:8080/stream.mjpg`), the `camera_index` parameter type would need to change to string. Currently only integer device indices are supported.
+| **Parameter** | `camera_source` (string, default `'1'`) — device index (`'0'`, `'1'`, …) or full URL (`'http://192.168.8.2:8080/stream.mjpg'`) |
 
 ---
 
