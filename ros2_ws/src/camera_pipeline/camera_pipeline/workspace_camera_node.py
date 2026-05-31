@@ -14,7 +14,7 @@ class WorkspaceCameraNode(Node):
     def __init__(self):
         super().__init__('workspace_camera_node')
 
-        self.declare_parameter('camera_source', '0')
+        self.declare_parameter('camera_source', '1')
         src = self.get_parameter('camera_source').get_parameter_value().string_value
 
         self._bridge = CvBridge()

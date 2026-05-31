@@ -92,17 +92,6 @@ class AprilTagWorkspaceNode(Node):
 
         gray = cv2.cvtColor(self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8'), cv2.COLOR_BGR2GRAY)
 
-        # Build undistort maps on first frame once dimensions are known
-        if self._map1 is None and self._camera_matrix is not None:
-            h, w = gray.shape
-            new_K, _ = cv2.getOptimalNewCameraMatrix(
-                self._camera_matrix, self._dist_coeffs, (w, h), 1)
-            self._map1, self._map2 = cv2.initUndistortRectifyMap(
-                self._camera_matrix, self._dist_coeffs, None, new_K, (w, h), cv2.CV_16SC2)
-
-        if self._map1 is not None:
-            gray = cv2.remap(gray, self._map1, self._map2, cv2.INTER_LINEAR)
-
         tags = self.detector.detect(gray)
         self.get_logger().info(
             f'AprilTag detections in frame: {len(tags)}',
@@ -114,7 +103,7 @@ class AprilTagWorkspaceNode(Node):
                 continue
 
             robot_x, robot_y = self._pixel_to_robot(float(tag.center[0]), float(tag.center[1]))
-
+           
             t = TagDetection()
             t.tag_id  = int(tag.tag_id)
             t.pixel_x = float(tag.center[0])

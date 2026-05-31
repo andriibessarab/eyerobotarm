@@ -75,6 +75,7 @@ class PreviewNode(Node):
 
     def _cb_tags(self, msg: TagDetectionArray):
         self._latest_tags = msg
+        #self.get_logger().info(f'Length of April Tags: {len(msg.detections)}')
 
     def _cb_tracking(self, msg: Int32):
         self._gaze_tracking_id = msg.data
