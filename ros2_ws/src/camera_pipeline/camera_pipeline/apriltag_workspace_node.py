@@ -29,7 +29,7 @@ class AprilTagWorkspaceNode(Node):
 
         self._bridge = CvBridge()
 
-        self.declare_parameter('april_tag_family',   'tag16h5')
+        self.declare_parameter('april_tag_family',   'tag32h11')
         self.declare_parameter('min_decision_margin', 50.0)   # raised from 20 — cuts false positives
         self.declare_parameter('quad_decimate',       1.0)    # 1.0 = full res; default 2.0 kills small tags
         self.declare_parameter('decode_sharpening',   0.8)    # higher helps decode small patches
