@@ -103,7 +103,15 @@ class AprilTagGazeNode(Node):
             self._publish_tracking()
             return
 
-        if self._candidate is None or self._candidate[0] != best_tag_id:
+        if self._candidate is not None and self._candidate[0] != best_tag_id:
+            # Only switch candidate if new tag is significantly closer (>30px)
+            if best_x_dist < self._candidate[1] - 30:
+                self._candidate = [best_tag_id, best_x_dist, datetime.now()]
+            self._publish(-1)
+            self._publish_tracking()
+            return
+
+        if self._candidate is None:
             self._candidate = [best_tag_id, best_x_dist, datetime.now()]
             self._publish(-1)
             self._publish_tracking()
