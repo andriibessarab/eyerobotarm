@@ -25,8 +25,12 @@ C_IDLE    = ( 80, 200,  80)
 C_EXEC    = ( 60, 200, 240)
 C_WARN    = ( 60, 140, 255)
 C_OK      = ( 60, 200,  80)
+C_WARN2   = (  0, 180, 240)   # yellow-ish: detected but out of reach
 C_FAIL    = ( 60,  60, 200)
 C_GAZE    = (100, 180, 255)
+
+MIN_REACH = 135.0
+MAX_REACH = 320.0
 
 STALE_SEC = 0.5   # seconds before a detection is considered stale
 
@@ -42,8 +46,14 @@ def _ascii(text: str) -> str:
             .encode('ascii', 'replace').decode('ascii'))
 
 
-def _dot(frame, x, y, on, r=7):
-    col = C_OK if on else C_FAIL
+def _in_reach(rx, ry):
+    import math
+    return MIN_REACH <= math.sqrt(rx**2 + ry**2) <= MAX_REACH
+
+
+def _dot(frame, x, y, state, r=7):
+    # state: 'ok' | 'warn' (detected, out of reach) | 'off'
+    col = C_OK if state == 'ok' else (C_WARN2 if state == 'warn' else C_FAIL)
     cv2.circle(frame, (x, y), r, col, -1)
     cv2.circle(frame, (x, y), r, tuple(c // 2 for c in col), 1)
 
@@ -58,9 +68,11 @@ class StatusNode(Node):
         self._log: deque[str] = deque(maxlen=MAX_LOG)
 
         # Detection state + timestamps
-        self._ws_tag_time   = 0.0   # last time workspace tag was seen
-        self._ws_tag_ids    = []
-        self._hand_time     = 0.0   # last time hand position was received
+        self._ws_tag_time    = 0.0
+        self._ws_tag_ids     = []
+        self._ws_tag_in_reach = False
+        self._hand_time      = 0.0
+        self._hand_in_reach  = False
         self._palm_up       = False
         self._palm_time     = 0.0
         self._gaze_tracking = -1    # tag being accumulated
@@ -88,11 +100,13 @@ class StatusNode(Node):
 
     def _cb_ws_tags(self, msg):
         if msg.detections:
-            self._ws_tag_time = time.time()
-            self._ws_tag_ids  = [d.tag_id for d in msg.detections]
+            self._ws_tag_time     = time.time()
+            self._ws_tag_ids      = [d.tag_id for d in msg.detections]
+            self._ws_tag_in_reach = any(_in_reach(d.robot_x, d.robot_y) for d in msg.detections)
 
     def _cb_hand(self, msg):
-        self._hand_time = time.time()
+        self._hand_time     = time.time()
+        self._hand_in_reach = _in_reach(msg.x, msg.y)
 
     def _cb_palm(self, msg):
         self._palm_up   = msg.data
@@ -147,26 +161,39 @@ class StatusNode(Node):
                     FONT, 0.38, C_DIM, 1, cv2.LINE_AA)
         py += 18
 
-        ws_tag_ok   = (now - self._ws_tag_time) < STALE_SEC
-        hand_ok     = (now - self._hand_time)   < STALE_SEC
-        palm_ok     = (now - self._palm_time)   < STALE_SEC and self._palm_up
-        gaze_ok     = self._gaze_tracking >= 0 or (now - self._gaze_lock_t < 3.0)
+        ws_tag_seen = (now - self._ws_tag_time) < STALE_SEC
+        hand_seen   = (now - self._hand_time)   < STALE_SEC
+        palm_seen   = (now - self._palm_time)   < STALE_SEC
+        gaze_active = self._gaze_tracking >= 0 or (now - self._gaze_lock_t < 3.0)
 
-        tag_label = 'Tags: ' + ', '.join(f'#{t}' for t in self._ws_tag_ids) if ws_tag_ok and self._ws_tag_ids else 'Workspace tag'
+        def tag_state():
+            if not ws_tag_seen:        return 'off'
+            return 'ok' if self._ws_tag_in_reach else 'warn'
+
+        def hand_state():
+            if not hand_seen:          return 'off'
+            return 'ok' if self._hand_in_reach else 'warn'
+
+        def palm_state():
+            if not palm_seen:          return 'off'
+            return 'ok' if self._palm_up else 'warn'
+
+        tag_label = 'Tags: ' + ', '.join(f'#{t}' for t in self._ws_tag_ids) if ws_tag_seen and self._ws_tag_ids else 'Workspace tag'
         checks = [
-            (ws_tag_ok,   tag_label),
-            (hand_ok,     'Hand in workspace'),
-            (palm_ok,     'Palm facing up'),
-            (gaze_ok,     'Gaze on tag'),
+            (tag_state(),  tag_label),
+            (hand_state(), 'Hand in workspace'),
+            (palm_state(), 'Palm facing up'),
+            ('ok' if gaze_active else 'off', 'Gaze on tag'),
         ]
 
         col_w = WIN_W // 2
-        for i, (ok, label) in enumerate(checks):
+        for i, (state, label) in enumerate(checks):
             cx = 20  + (i % 2) * col_w
             cy = py  + (i // 2) * 28
-            _dot(canvas, cx, cy, ok)
+            _dot(canvas, cx, cy, state)
+            text_col = C_WHITE if state == 'ok' else (C_WARN2 if state == 'warn' else C_DIM)
             cv2.putText(canvas, label, (cx + 16, cy + 5),
-                        FONT, 0.48, C_WHITE if ok else C_DIM, 1, cv2.LINE_AA)
+                        FONT, 0.48, text_col, 1, cv2.LINE_AA)
 
         py += 28 * 2 + 8
 
