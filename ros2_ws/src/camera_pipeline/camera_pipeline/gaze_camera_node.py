@@ -8,26 +8,42 @@ from sensor_msgs.msg import Image
 class GazeCameraNode(Node):
     """Publishes frames from the glasses-mounted (gaze) camera.
 
-    camera_source accepts an integer device index ('0', '1', ...) or a full
-    URL string (e.g. 'http://192.168.8.2:8080/stream.mjpg' for the Pi stream).
+    Two modes (mutually exclusive):
+    - camera_source: device index string ('0', '1') or URL — opens VideoCapture
+    - camera_topic:  if non-empty, relays an existing image topic instead
+                     (useful for local testing: point at /workspace_camera/image_raw)
+
+    camera_topic takes priority when set.
     """
 
     def __init__(self):
         super().__init__('gaze_camera_node')
 
         self.declare_parameter('camera_source', '1')
-        src = self.get_parameter('camera_source').get_parameter_value().string_value
+        self.declare_parameter('camera_topic', '')
+
+        src   = self.get_parameter('camera_source').get_parameter_value().string_value
+        topic = self.get_parameter('camera_topic').get_parameter_value().string_value
 
         self._bridge = CvBridge()
         self._pub = self.create_publisher(Image, '/gaze_camera/image_raw', 10)
+        self._cap = None
 
-        self._cap = cv2.VideoCapture(int(src) if src.isdigit() else src)
-        if not self._cap.isOpened():
-            self.get_logger().warn(f'Could not open camera_source: {src}')
+        if topic:
+            self.create_subscription(Image, topic, self._relay, 10)
+            self.get_logger().info(f'gaze_camera_node ready (relaying topic: {topic})')
+        else:
+            self._cap = cv2.VideoCapture(int(src) if src.isdigit() else src)
+            if not self._cap.isOpened():
+                self.get_logger().warn(f'Could not open camera_source: {src}')
+            self.create_timer(1.0 / 30.0, self._capture)
+            self.get_logger().info(f'gaze_camera_node ready (camera_source={src})')
 
-        self._timer = self.create_timer(1.0 / 30.0, self._capture)  # 30 Hz
-
-        self.get_logger().info(f'gaze_camera_node ready (camera_source={src})')
+    def _relay(self, msg: Image):
+        """Re-stamp and republish an incoming image on the gaze topic."""
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'gaze_camera'
+        self._pub.publish(msg)
 
     def _capture(self):
         ret, frame = self._cap.read()
@@ -40,7 +56,8 @@ class GazeCameraNode(Node):
         self._pub.publish(msg)
 
     def destroy_node(self):
-        self._cap.release()
+        if self._cap is not None:
+            self._cap.release()
         super().destroy_node()
 
 
