@@ -53,4 +53,9 @@ def generate_launch_description():
             name='coordinator',
             output='screen',
         ),
+        Node(
+            package='camera_pipeline',
+            executable='status_node',
+            output='screen',
+        ),
     ])

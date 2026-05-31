@@ -66,7 +66,8 @@ class TaskCoordinatorNode(Node):
         self.create_subscription(Point, '/workspace/arm_position', self._cb_arm, 10)
 
         # --- publishers ---
-        self._state_pub = self.create_publisher(String, '~/state', 10)
+        self._state_pub  = self.create_publisher(String, '~/state',  10)
+        self._status_pub = self.create_publisher(String, '~/status', 10)
         self.create_timer(1.0, self._publish_state)
 
         # --- service clients ---
@@ -75,7 +76,17 @@ class TaskCoordinatorNode(Node):
         self._home_cli      = self.create_client(Trigger,        '/dobot_arm_node/home')
         self._set_speed_cli = self.create_client(SetSpeed,       '/dobot_arm_node/set_speed')
 
-        self.get_logger().info('task_coordinator_node ready — waiting for gaze lock')
+        self._status('Waiting for gaze lock')
+
+    # -----------------------------------------------------------------------
+    # Status helper
+    # -----------------------------------------------------------------------
+
+    def _status(self, text: str):
+        msg = String()
+        msg.data = text
+        self._status_pub.publish(msg)
+        self.get_logger().info(text)
 
     # -----------------------------------------------------------------------
     # Incoming data callbacks
@@ -97,7 +108,7 @@ class TaskCoordinatorNode(Node):
 
         # --- validate tag ---
         if self._latest_tags is None:
-            self.get_logger().warn(f'Gaze locked tag {tag_id} but no overhead tag detections yet')
+            self.get_logger().warn(f'Gaze locked tag {tag_id} — no overhead detections yet')
             return
 
         match = next((d for d in self._latest_tags.detections if d.tag_id == tag_id), None)
@@ -116,7 +127,7 @@ class TaskCoordinatorNode(Node):
 
         # --- validate hand ---
         if self._latest_arm is None:
-            self.get_logger().warn('No hand detected in overhead camera — cannot determine drop position')
+            self.get_logger().warn('No hand detected — cannot determine drop position')
             return
 
         if not self._in_reach(self._latest_arm.x, self._latest_arm.y, min_r, max_r):
@@ -128,9 +139,9 @@ class TaskCoordinatorNode(Node):
 
         drop_x, drop_y = self._latest_arm.x, self._latest_arm.y
 
-        self.get_logger().info(
-            f'Validated — pick tag={tag_id} at ({pick_x:.0f}, {pick_y:.0f}) '
-            f'→ hand at ({drop_x:.0f}, {drop_y:.0f})'
+        self._status(
+            f'Gaze locked tag {tag_id} — pick ({pick_x:.0f}, {pick_y:.0f}) '
+            f'→ hand ({drop_x:.0f}, {drop_y:.0f})'
         )
         self._execute_pick_and_place(pick_x, pick_y, drop_x, drop_y)
 
@@ -152,7 +163,7 @@ class TaskCoordinatorNode(Node):
         timeout = self.get_parameter('exec_timeout').value
         self._watchdog = self.create_timer(timeout, self._on_timeout)
 
-        normal_v  = self.get_parameter('normal_velocity').value
+        normal_v   = self.get_parameter('normal_velocity').value
         approach_v = self.get_parameter('approach_velocity').value
         z_drop     = self.get_parameter('z_drop').value
 
@@ -181,32 +192,47 @@ class TaskCoordinatorNode(Node):
                 self._watchdog.destroy()
                 self._watchdog = None
             self._state = State.IDLE
-            self.get_logger().info('Pick-and-place complete — IDLE')
+            self._status('Ready — waiting for next gaze lock')
 
-        # Full sequence:
-        # open → hover pick → descend pick → close → lift →
-        # travel above hand [normal] → slow → descend to hand [slow] →
-        # open → restore speed → home → done
-        _gripper(True, lambda:
-        _move(pick_x, pick_y, Z_SAFE, lambda:
-        _move(pick_x, pick_y, Z_PICK, lambda:
-        _gripper(False, lambda:
-        _move(pick_x, pick_y, Z_SAFE, lambda:
-        _move(drop_x, drop_y, Z_SAFE, lambda:
-        _speed(approach_v, lambda:
-        _move(drop_x, drop_y, z_drop, lambda:
-        _gripper(True, lambda:
-        _speed(normal_v, lambda:
-        _home(_done)))))))))))
+        # Full sequence with status at each step
+        self._status('Opening gripper')
+        _gripper(True, lambda: (
+            self._status('Moving above pick position'),
+            _move(pick_x, pick_y, Z_SAFE, lambda: (
+                self._status('Descending to object'),
+                _move(pick_x, pick_y, Z_PICK, lambda: (
+                    self._status('Gripping object'),
+                    _gripper(False, lambda: (
+                        self._status('Object secured — lifting'),
+                        _move(pick_x, pick_y, Z_SAFE, lambda: (
+                            self._status('Transiting to hand'),
+                            _move(drop_x, drop_y, Z_SAFE, lambda: (
+                                self._status('Slowing for human approach'),
+                                _speed(approach_v, lambda: (
+                                    self._status('Descending to hand'),
+                                    _move(drop_x, drop_y, z_drop, lambda: (
+                                        self._status('Releasing object'),
+                                        _gripper(True, lambda: (
+                                            self._status('Delivery complete — returning home'),
+                                            _speed(normal_v, lambda:
+                                                _home(_done))
+                                        ))
+                                    ))
+                                ))
+                            ))
+                        ))
+                    ))
+                ))
+            ))
+        ))
 
     # -----------------------------------------------------------------------
     # Watchdog
     # -----------------------------------------------------------------------
 
     def _on_timeout(self):
-        self.get_logger().error(
-            f'Pick-and-place timed out after '
-            f'{self.get_parameter("exec_timeout").value:.0f}s — resetting to IDLE'
+        self._status(
+            f'ERROR: timed out after {self.get_parameter("exec_timeout").value:.0f}s — resetting'
         )
         if self._watchdog:
             self._watchdog.destroy()

@@ -25,6 +25,7 @@ setup(
             'apriltag_gaze_node = camera_pipeline.apriltag_gaze_node:main',
             'apriltag_workspace_node = camera_pipeline.apriltag_workspace_node:main',
             'arm_detection_node = camera_pipeline.arm_detection_node:main',
+            'status_node = camera_pipeline.status_node:main',
         ],
     },
 )
