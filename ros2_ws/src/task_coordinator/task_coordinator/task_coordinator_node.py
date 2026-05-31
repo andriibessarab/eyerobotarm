@@ -1,4 +1,5 @@
 import math
+import threading
 from enum import Enum, auto
 
 import rclpy
@@ -8,7 +9,7 @@ from std_msgs.msg import Int32, String
 from std_srvs.srv import Trigger
 
 from pick_interfaces.msg import TagDetectionArray
-from pick_interfaces.srv import GripperControl, MoveToXYZ, SetSpeed
+from pick_interfaces.srv import GripperControl, MoveToXYZ
 
 
 class State(Enum):
@@ -69,10 +70,9 @@ class TaskCoordinatorNode(Node):
         self.create_timer(1.0, self._publish_state)
 
         # --- service clients ---
-        self._move_xyz_cli  = self.create_client(MoveToXYZ,      '/dobot_arm_node/move_to_xyz')
-        self._gripper_cli   = self.create_client(GripperControl, '/dobot_arm_node/gripper_control')
-        self._home_cli      = self.create_client(Trigger,        '/dobot_arm_node/home')
-        self._set_speed_cli = self.create_client(SetSpeed,       '/dobot_arm_node/set_speed')
+        self._move_xyz_cli = self.create_client(MoveToXYZ,      '/dobot_arm_node/move_to_xyz')
+        self._gripper_cli  = self.create_client(GripperControl, '/dobot_arm_node/gripper_control')
+        self._home_cli     = self.create_client(Trigger,        '/dobot_arm_node/home')
 
         self._status('Waiting for arm...')
         self.create_timer(0.5, self._startup_check)
@@ -82,28 +82,18 @@ class TaskCoordinatorNode(Node):
     # -----------------------------------------------------------------------
 
     def _startup_check(self):
-        self.destroy_timer(self._startup_timer if hasattr(self, '_startup_timer') else None)
-        # Only run once
         if hasattr(self, '_startup_done'):
             return
-        self._startup_done = True
-
         services_ready = all(
             cli.wait_for_service(timeout_sec=0.1)
             for cli in [self._gripper_cli, self._home_cli]
         )
         if not services_ready:
             self._status('Arm not ready yet — retrying...')
-            self.create_timer(1.0, self._startup_check)
             return
+        self._startup_done = True
 
-        self._status('Arm check: open gripper')
-
-        def _open_done(_):
-            self._status('Arm check: close gripper')
-            req = GripperControl.Request()
-            req.open = False
-            self._gripper_cli.call_async(req).add_done_callback(_close_done)
+        self._status('Arm check: closing gripper')
 
         def _close_done(_):
             self._status('Arm check: homing')
@@ -113,8 +103,8 @@ class TaskCoordinatorNode(Node):
             self._status('Arm ready — waiting for gaze lock')
 
         req = GripperControl.Request()
-        req.open = True
-        self._gripper_cli.call_async(req).add_done_callback(_open_done)
+        req.open = False
+        self._gripper_cli.call_async(req).add_done_callback(_close_done)
 
     # -----------------------------------------------------------------------
     # Status helper
@@ -182,7 +172,6 @@ class TaskCoordinatorNode(Node):
             (self._move_xyz_cli, 'move_to_xyz'),
             (self._gripper_cli,  'gripper_control'),
             (self._home_cli,     'home'),
-            (self._set_speed_cli,'set_speed'),
         ]:
             if not cli.wait_for_service(timeout_sec=1.0):
                 self.get_logger().warn(f'Arm service {name} not available — is dobot_arm_node running?')
@@ -208,75 +197,49 @@ class TaskCoordinatorNode(Node):
     # Pick-and-place execution — chained async service calls
     # -----------------------------------------------------------------------
 
+    def _sync_call(self, cli, req, timeout=15.0):
+        event = threading.Event()
+        result = [None]
+        def cb(future):
+            result[0] = future.result()
+            event.set()
+        cli.call_async(req).add_done_callback(cb)
+        event.wait(timeout=timeout)
+        return result[0]
+
     def _execute_pick_and_place(self, pick_x, pick_y, drop_x, drop_y):
         self._state = State.EXECUTING
-        timeout = self.get_parameter('exec_timeout').value
-        self._watchdog = self.create_timer(timeout, self._on_timeout)
+        z_safe = self.get_parameter('z_safe').value
+        z_pick = self.get_parameter('z_pick').value
+        z_drop = self.get_parameter('z_drop').value
 
-        z_safe     = self.get_parameter('z_safe').value
-        z_pick     = self.get_parameter('z_pick').value
-        z_drop     = self.get_parameter('z_drop').value
-        normal_v   = self.get_parameter('normal_velocity').value
-        approach_v = self.get_parameter('approach_velocity').value
+        def run():
+            try:
+                def gripper(open_):
+                    req = GripperControl.Request(); req.open = open_
+                    self._sync_call(self._gripper_cli, req)
 
-        def _gripper(open_: bool, next_cb):
-            req = GripperControl.Request()
-            req.open = open_
-            self._gripper_cli.call_async(req).add_done_callback(lambda _: next_cb())
+                def move(x, y, z):
+                    req = MoveToXYZ.Request()
+                    req.x, req.y, req.z, req.r_head = x, y, z, 0.0
+                    self._sync_call(self._move_xyz_cli, req)
 
-        def _move(x, y, z, next_cb):
-            req = MoveToXYZ.Request()
-            req.x, req.y, req.z, req.r_head = x, y, z, 0.0
-            self._move_xyz_cli.call_async(req).add_done_callback(lambda _: next_cb())
+                def home():
+                    self._sync_call(self._home_cli, Trigger.Request())
 
-        def _speed(v, next_cb):
-            req = SetSpeed.Request()
-            req.velocity = v
-            req.acceleration = v
-            self._set_speed_cli.call_async(req).add_done_callback(lambda _: next_cb())
+                self._status('Opening gripper');  gripper(True)
+                self._status('Moving to pick');   move(pick_x, pick_y, z_safe)
+                self._status('Descending');        move(pick_x, pick_y, z_pick)
+                self._status('Gripping');          gripper(False)
+                self._status('Moving to drop');   move(drop_x, drop_y, z_safe)
+                self._status('Descending to hand'); move(drop_x, drop_y, z_drop)
+                self._status('Releasing');         gripper(True)
+                self._status('Homing');            home()
+            finally:
+                self._state = State.IDLE
+                self._status('Ready — waiting for next gaze lock')
 
-        def _home(next_cb):
-            self._home_cli.call_async(Trigger.Request()).add_done_callback(lambda _: next_cb())
-
-        def _done():
-            if self._watchdog:
-                self._watchdog.cancel()
-                self._watchdog.destroy()
-                self._watchdog = None
-            self._state = State.IDLE
-            self._status('Ready — waiting for next gaze lock')
-
-        # Full sequence with status at each step
-        self._status('Opening gripper')
-        _gripper(True, lambda: (
-            self._status('Moving above pick position'),
-            _move(pick_x, pick_y, z_safe, lambda: (
-                self._status('Descending to object'),
-                _move(pick_x, pick_y, z_pick, lambda: (
-                    self._status('Gripping object'),
-                    _gripper(False, lambda: (
-                        self._status('Object secured — lifting'),
-                        _move(pick_x, pick_y, z_safe, lambda: (
-                            self._status('Transiting to hand'),
-                            _move(drop_x, drop_y, z_safe, lambda: (
-                                self._status('Slowing for human approach'),
-                                _speed(approach_v, lambda: (
-                                    self._status('Descending to hand'),
-                                    _move(drop_x, drop_y, z_drop, lambda: (
-                                        self._status('Releasing object'),
-                                        _gripper(True, lambda: (
-                                            self._status('Delivery complete — returning home'),
-                                            _speed(normal_v, lambda:
-                                                _home(_done))
-                                        ))
-                                    ))
-                                ))
-                            ))
-                        ))
-                    ))
-                ))
-            ))
-        ))
+        threading.Thread(target=run, daemon=True).start()
 
     # -----------------------------------------------------------------------
     # Watchdog
