@@ -77,9 +77,6 @@ class ArmDetectionNode(Node):
         return float(xy[0]), float(xy[1])
 
     def _cb_frame(self, msg: Image):
-        if self._H is None:
-            return
-
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width = frame.shape[:2]
