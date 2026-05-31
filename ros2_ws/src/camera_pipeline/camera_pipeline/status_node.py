@@ -71,7 +71,8 @@ class StatusNode(Node):
         self._ws_tag_time    = 0.0
         self._ws_tag_ids     = []
         self._ws_tag_in_reach = False
-        self._hand_time      = 0.0
+        self._hand_seen_time = 0.0   # any hand visible (pixel topic)
+        self._hand_reach_time= 0.0   # robot coords received
         self._hand_in_reach  = False
         self._palm_up       = False
         self._palm_time     = 0.0
@@ -82,7 +83,8 @@ class StatusNode(Node):
         self.create_subscription(String,          '/coordinator/state',            self._cb_state,    10)
         self.create_subscription(String,          '/coordinator/status',           self._cb_status,   10)
         self.create_subscription(TagDetectionArray, '/workspace/tag_detections',   self._cb_ws_tags,  10)
-        self.create_subscription(Point,           '/workspace/arm_position',       self._cb_hand,     10)
+        self.create_subscription(Point,           '/workspace/arm_position',       self._cb_hand,       10)
+        self.create_subscription(Point,           '/workspace/arm_position_pixel', self._cb_hand_pixel, 10)
         self.create_subscription(Bool,            '/workspace/palm',               self._cb_palm,     10)
         self.create_subscription(Int32,           '/apriltag_gaze/tracking',       self._cb_tracking, 10)
         self.create_subscription(Int32,           '/gaze/gazed_tag_id',            self._cb_locked,   10)
@@ -104,9 +106,12 @@ class StatusNode(Node):
             self._ws_tag_ids      = [d.tag_id for d in msg.detections]
             self._ws_tag_in_reach = any(_in_reach(d.robot_x, d.robot_y) for d in msg.detections)
 
+    def _cb_hand_pixel(self, msg):
+        self._hand_seen_time = time.time()
+
     def _cb_hand(self, msg):
-        self._hand_time     = time.time()
-        self._hand_in_reach = _in_reach(msg.x, msg.y)
+        self._hand_reach_time = time.time()
+        self._hand_in_reach   = _in_reach(msg.x, msg.y)
 
     def _cb_palm(self, msg):
         self._palm_up   = msg.data
@@ -161,8 +166,9 @@ class StatusNode(Node):
                     FONT, 0.38, C_DIM, 1, cv2.LINE_AA)
         py += 18
 
-        ws_tag_seen = (now - self._ws_tag_time) < STALE_SEC
-        hand_seen   = (now - self._hand_time)   < STALE_SEC
+        ws_tag_seen  = (now - self._ws_tag_time)   < STALE_SEC
+        hand_seen    = (now - self._hand_seen_time) < STALE_SEC
+        hand_coords  = (now - self._hand_reach_time) < STALE_SEC
         palm_seen   = (now - self._palm_time)   < STALE_SEC
         gaze_active = self._gaze_tracking >= 0 or (now - self._gaze_lock_t < 3.0)
 
@@ -171,8 +177,9 @@ class StatusNode(Node):
             return 'ok' if self._ws_tag_in_reach else 'warn'
 
         def hand_state():
-            if not hand_seen:          return 'off'
-            return 'ok' if self._hand_in_reach else 'warn'
+            if not hand_seen:                      return 'off'
+            if hand_coords and self._hand_in_reach: return 'ok'
+            return 'warn'
 
         def palm_state():
             if not palm_seen or not self._palm_up: return 'off'
