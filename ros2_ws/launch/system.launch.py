@@ -65,4 +65,18 @@ def generate_launch_description():
             executable='preview_node',
             output='screen',
         ),
+        Node(
+            package='camera_pipeline',
+            executable='recorder_node',
+            name='recorder_workspace',
+            output='log',
+            parameters=[{'image_topic': '/workspace_camera/image_raw', 'label': 'workspace'}],
+        ),
+        Node(
+            package='camera_pipeline',
+            executable='recorder_node',
+            name='recorder_gaze',
+            output='log',
+            parameters=[{'image_topic': '/gaze_camera/image_raw', 'label': 'gaze'}],
+        ),
     ])
