@@ -29,8 +29,9 @@ class AprilTagWorkspaceNode(Node):
 
         self._bridge = CvBridge()
 
-        self.declare_parameter('april_tag_family',   'tag32h11')
-        self.declare_parameter('min_decision_margin', 50.0)   # raised from 20 — cuts false positives
+        # Must match the physical tags; pupil_apriltags supports families like tag36h11.
+        self.declare_parameter('april_tag_family',   'tag36h11')
+        self.declare_parameter('min_decision_margin', 70.0)   # raised from 20 — cuts false positives
         self.declare_parameter('quad_decimate',       1.0)    # 1.0 = full res; default 2.0 kills small tags
         self.declare_parameter('decode_sharpening',   0.8)    # higher helps decode small patches
 
@@ -99,8 +100,7 @@ class AprilTagWorkspaceNode(Node):
         )
 
         for tag in tags:
-            if float(tag.decision_margin) < self._min_decision_margin:
-                continue
+       
 
             robot_x, robot_y = self._pixel_to_robot(float(tag.center[0]), float(tag.center[1]))
            
