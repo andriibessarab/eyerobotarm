@@ -139,8 +139,8 @@ class TaskCoordinatorNode(Node):
                     self._sync_call(self._move_xyz_cli, req)
 
                 self._status('Opening gripper');    gripper(True)
-                self._status('Moving to pick');     move(pick_x, pick_y, z_safe, r=pick_angle)
-                self._status('Descending');          move(pick_x, pick_y, z_pick, r=pick_angle)
+                self._status('Moving to pick');     move(pick_x, pick_y, z_safe)
+                self._status('Descending');          move(pick_x, pick_y, z_pick)
                 self._status('Gripping');            gripper(False)
                 self._status('Moving to drop');     move(drop_x, drop_y, z_safe)
                 self._status('Descending to hand'); move(drop_x, drop_y, z_drop)
