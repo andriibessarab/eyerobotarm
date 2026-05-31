@@ -29,8 +29,8 @@ class AprilTagGazeNode(Node):
         self._bridge = CvBridge()
 
         _dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_16h5)
-        _params = cv2.aruco.DetectorParameters_create()
-        self._detector = (_dict, _params)
+        _params = cv2.aruco.DetectorParameters()
+        self._detector = cv2.aruco.ArucoDetector(_dict, _params)
 
         # [tag_id, distance, start_time] while accumulating; None when idle
         self._candidate = None
@@ -56,7 +56,7 @@ class AprilTagGazeNode(Node):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         h, w = gray.shape
 
-        corners, ids, _ = cv2.aruco.detectMarkers(gray, *self._detector)
+        corners, ids, _ = self._detector.detectMarkers(gray)
 
         if ids is None or len(ids) == 0:
             self._candidate = None
