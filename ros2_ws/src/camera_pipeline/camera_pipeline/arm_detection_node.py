@@ -93,24 +93,26 @@ class ArmDetectionNode(Node):
             palm_x = ((wrist.x + middle_mcp.x) / 2) * width
             palm_y = ((wrist.y + middle_mcp.y) / 2) * height
 
-            robot_x, robot_y = self._pixel_to_robot(palm_x, palm_y)
             confidence = getattr(wrist, 'visibility', 1.0)
 
-            msg = Point()
-            msg.x = robot_x
-            msg.y = robot_y
-            msg.z = 0.0
-
-            self.get_logger().info(
-                f'arm_position: robot=({robot_x:.1f}, {robot_y:.1f}) mm  confidence={confidence:.2f}',
-                throttle_duration_sec=1.0,
-            )
-            self._pub.publish(msg)
-
+            # Always publish pixel coords (for preview_node — no homography needed)
             pixel_msg = Point()
             pixel_msg.x = palm_x
             pixel_msg.y = palm_y
             self._pub_pixel.publish(pixel_msg)
+
+            # Only publish robot coords when homography is available (for task_coordinator)
+            if self._H is not None:
+                robot_x, robot_y = self._pixel_to_robot(palm_x, palm_y)
+                msg = Point()
+                msg.x = robot_x
+                msg.y = robot_y
+                msg.z = 0.0
+                self.get_logger().info(
+                    f'arm_position: robot=({robot_x:.1f}, {robot_y:.1f}) mm  confidence={confidence:.2f}',
+                    throttle_duration_sec=1.0,
+                )
+                self._pub.publish(msg)
         else:
             self.get_logger().warn(
                 'No hand detected in workspace_camera/image_raw',
