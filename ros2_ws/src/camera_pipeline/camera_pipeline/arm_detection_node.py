@@ -43,7 +43,7 @@ class ArmDetectionNode(Node):
             static_image_mode=False,
             max_num_hands=1,
             min_detection_confidence=0.8,
-            min_tracking_confidence=0.8
+            min_tracking_confidence=0.5
         )
         self.mp_draw = mp.solutions.drawing_utils
 
@@ -82,30 +82,30 @@ class ArmDetectionNode(Node):
         return float(xy[0]), float(xy[1])
 
     def _cb_frame(self, msg: Image):
-        self.get_logger().info(
-                f'publishing arm_position: ' )
         if self._H is None:
             return
 
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        height, width = frame.shape[:2]
 
         result = self.hands.process(rgb)
 
         if result.multi_hand_landmarks:
-            hand_landmarks = result.multi_hand_landmarks[0]  # first hand only
+            hand_landmarks = result.multi_hand_landmarks[0]  
 
-            index_tip = hand_landmarks.landmark[8]  # index fingertip
+            wrist = hand_landmarks.landmark[0]  
 
-            x = index_tip.x
-            y = index_tip.y
-            z = index_tip.z
+            x = wrist.x * width
+            y = wrist.y * height
+
+
             msg = Point()
-            msg.x = index_tip.x
-            msg.y = index_tip.y
-            msg.z = index_tip.z
+            msg.x = x
+            msg.y = y
+        
             self.get_logger().info(
-                f'publishing arm_position: x={msg.x:.3f} y={msg.y:.3f} z={msg.z:.3f}',
+                f'publishing arm_position:(confidence={hand_landmarks.landmark[0].visibility:.2f})',
                 throttle_duration_sec=1.0,
             )
             self._pub.publish(msg)
