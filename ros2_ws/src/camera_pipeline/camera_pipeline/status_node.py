@@ -59,7 +59,7 @@ class StatusNode(Node):
 
         # Detection state + timestamps
         self._ws_tag_time   = 0.0   # last time workspace tag was seen
-        self._ws_tag_id     = -1
+        self._ws_tag_ids    = []
         self._hand_time     = 0.0   # last time hand position was received
         self._palm_up       = False
         self._palm_time     = 0.0
@@ -89,7 +89,7 @@ class StatusNode(Node):
     def _cb_ws_tags(self, msg):
         if msg.detections:
             self._ws_tag_time = time.time()
-            self._ws_tag_id   = msg.detections[0].tag_id
+            self._ws_tag_ids  = [d.tag_id for d in msg.detections]
 
     def _cb_hand(self, msg):
         self._hand_time = time.time()
@@ -152,8 +152,9 @@ class StatusNode(Node):
         palm_ok     = (now - self._palm_time)   < STALE_SEC and self._palm_up
         gaze_ok     = self._gaze_tracking >= 0 or (now - self._gaze_lock_t < 3.0)
 
+        tag_label = 'Tags: ' + ', '.join(f'#{t}' for t in self._ws_tag_ids) if ws_tag_ok and self._ws_tag_ids else 'Workspace tag'
         checks = [
-            (ws_tag_ok,   f'Workspace tag' + (f' #{self._ws_tag_id}' if ws_tag_ok and self._ws_tag_id >= 0 else '')),
+            (ws_tag_ok,   tag_label),
             (hand_ok,     'Hand in workspace'),
             (palm_ok,     'Palm facing up'),
             (gaze_ok,     'Gaze on tag'),
