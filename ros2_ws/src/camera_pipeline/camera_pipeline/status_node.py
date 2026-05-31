@@ -175,8 +175,8 @@ class StatusNode(Node):
             return 'ok' if self._hand_in_reach else 'warn'
 
         def palm_state():
-            if not palm_seen:          return 'off'
-            return 'ok' if self._palm_up else 'warn'
+            if not palm_seen or not self._palm_up: return 'off'
+            return 'ok'
 
         tag_label = 'Tags: ' + ', '.join(f'#{t}' for t in self._ws_tag_ids) if ws_tag_seen and self._ws_tag_ids else 'Workspace tag'
         checks = [
