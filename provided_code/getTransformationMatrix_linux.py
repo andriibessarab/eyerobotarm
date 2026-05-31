@@ -23,6 +23,7 @@ Coordinate grid (robot frame, mm):
 """
 
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -33,17 +34,17 @@ from pydobot import Dobot
 # Config
 # -----------------------------------------------------------------------
 
-SERIAL_PORT  = '/dev/ttyUSB1'
-CAMERA_INDEX = 1               # Orbbec USB camera
+SERIAL_PORT  = '/dev/ttyUSB2'
+CAMERA_INDEX = 0               # Orbbec USB camera
 CAL_FILE     = Path(__file__).parent / 'camera_params.npz'
 OUT_FILE     = Path(__file__).parent / 'HomographyMatrix.npy'
 
 # 12-point calibration grid (robot XY in mm)
 ROBOT_POINTS = np.array([
-    [200, -80], [230, -80], [260, -80],
-    [200, -40], [230, -40], [260, -40],
-    [200,   0], [230,   0], [260,   0],
-    [200,  40], [230,  40], [260,  40],
+    [180, -60], [210, -60], [240, -60],
+    [180, -20], [210, -20], [240, -20],
+    [180,  20], [210,  20], [240,  20],
+    [180,  60], [210,  60], [240,  60],
 ], dtype=np.float32)
 
 Z_CAL   = -24   # mm — height at which robot tip touches table surface
@@ -96,6 +97,24 @@ def detect_red_center(frame):
 # Calibration loop
 # -----------------------------------------------------------------------
 
+def _move(robot, x, y, z, retries=5):
+    PTPMode = __import__('pydobot.enums', fromlist=['PTPMode']).PTPMode
+    for attempt in range(retries):
+        try:
+            robot.ser.reset_input_buffer()
+            robot.ser.reset_output_buffer()
+            time.sleep(0.2)
+            robot._set_ptp_cmd(x, y, z, 0.0, mode=PTPMode.MOVJ_XYZ, wait=True)
+            time.sleep(0.5)
+            return
+        except (AttributeError, Exception) as e:
+            print(f'  Move failed (attempt {attempt+1}/{retries}): {e}')
+            time.sleep(2.0)
+    raise RuntimeError(f'Failed to move to ({x}, {y}, {z}) after {retries} attempts')
+
+
+
+
 def collect_calibration(robot: Dobot) -> np.ndarray:
     pixel_points = []
 
@@ -103,17 +122,13 @@ def collect_calibration(robot: Dobot) -> np.ndarray:
         print(f'\n── Point {i+1}/12 ── robot ({rx:.0f}, {ry:.0f}) mm')
 
         # Move arm to calibration point
-        robot._set_ptp_cmd(rx, ry, Z_CAL, 0.0,
-                           mode=__import__('pydobot.enums', fromlist=['PTPMode']).PTPMode.MOVJ_XYZ,
-                           wait=True)
+        _move(robot, rx, ry, Z_CAL)
 
         print('  Robot at position. Press SPACE when you can see the tip in the camera.')
         _wait_for_space('Robot at point — SPACE to continue')
 
         # Move arm out of the way so we can see the table point
-        robot._set_ptp_cmd(200, 0, Z_CLEAR, 0.0,
-                           mode=__import__('pydobot.enums', fromlist=['PTPMode']).PTPMode.MOVJ_XYZ,
-                           wait=True)
+        _move(robot, 200, 0, Z_CLEAR)
 
         print('  Place a RED marker exactly where the tip was.')
         print('  SPACE to capture once the green dot appears on the marker.')
