@@ -33,8 +33,8 @@ from pydobot import Dobot
 # Config
 # -----------------------------------------------------------------------
 
-SERIAL_PORT  = '/dev/ttyUSB0'
-CAMERA_INDEX = 0               # Orbbec USB camera
+SERIAL_PORT  = '/dev/ttyUSB1'
+CAMERA_INDEX = 1               # Orbbec USB camera
 CAL_FILE     = Path(__file__).parent / 'camera_params.npz'
 OUT_FILE     = Path(__file__).parent / 'HomographyMatrix.npy'
 
