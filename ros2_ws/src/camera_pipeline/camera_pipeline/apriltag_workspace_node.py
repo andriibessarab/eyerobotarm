@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 from pathlib import Path
@@ -31,9 +32,10 @@ class AprilTagWorkspaceNode(Node):
 
         # Must match the physical tags; pupil_apriltags supports families like tag36h11.
         self.declare_parameter('april_tag_family',   'tag36h11')
-        self.declare_parameter('min_decision_margin', 70.0)   # raised from 20 — cuts false positives
-        self.declare_parameter('quad_decimate',       1.0)    # 1.0 = full res; default 2.0 kills small tags
-        self.declare_parameter('decode_sharpening',   0.8)    # higher helps decode small patches
+        self.declare_parameter('min_decision_margin', 70.0)
+        self.declare_parameter('quad_decimate',       1.0)
+        self.declare_parameter('decode_sharpening',   0.8)
+        self.declare_parameter('angle_offset',        0.0)    # degrees — tune to align gripper with object
 
         self._april_tag_family    = self.get_parameter('april_tag_family').value
         self._min_decision_margin = float(self.get_parameter('min_decision_margin').value)
@@ -99,17 +101,26 @@ class AprilTagWorkspaceNode(Node):
             throttle_duration_sec=2.0,
         )
 
-        for tag in tags:
-       
+        angle_offset = float(self.get_parameter('angle_offset').value)
 
+        for tag in tags:
             robot_x, robot_y = self._pixel_to_robot(float(tag.center[0]), float(tag.center[1]))
-           
+
+            # Extract tag orientation from corners (top edge: corner 0 → corner 1)
+            dx = tag.corners[1][0] - tag.corners[0][0]
+            dy = tag.corners[1][1] - tag.corners[0][1]
+            angle_img = math.degrees(math.atan2(dy, dx))
+            # Fold into ±90° range and apply calibration offset
+            raw = angle_img + angle_offset
+            robot_angle = max(-90.0, min(90.0, (raw + 90.0) % 180.0 - 90.0))
+
             t = TagDetection()
-            t.tag_id  = int(tag.tag_id)
-            t.pixel_x = float(tag.center[0])
-            t.pixel_y = float(tag.center[1])
-            t.robot_x = robot_x
-            t.robot_y = robot_y
+            t.tag_id      = int(tag.tag_id)
+            t.pixel_x     = float(tag.center[0])
+            t.pixel_y     = float(tag.center[1])
+            t.robot_x     = robot_x
+            t.robot_y     = robot_y
+            t.robot_angle = robot_angle
             array_msg.detections.append(t)
 
         self._pub.publish(array_msg)

@@ -106,11 +106,11 @@ class TaskCoordinatorNode(Node):
             self.get_logger().warn(f'Hand out of reach ({self._latest_arm.x:.0f}, {self._latest_arm.y:.0f}) mm')
             return
 
-        pick_x, pick_y = match.robot_x, match.robot_y
+        pick_x, pick_y, pick_angle = match.robot_x, match.robot_y, match.robot_angle
         drop_x, drop_y = self._latest_arm.x, self._latest_arm.y
 
-        self._status(f'Executing: pick ({pick_x:.0f}, {pick_y:.0f}) → drop ({drop_x:.0f}, {drop_y:.0f})')
-        self._execute_pick_and_place(pick_x, pick_y, drop_x, drop_y)
+        self._status(f'Executing: pick ({pick_x:.0f}, {pick_y:.0f}) angle={pick_angle:.0f}° → drop ({drop_x:.0f}, {drop_y:.0f})')
+        self._execute_pick_and_place(pick_x, pick_y, pick_angle, drop_x, drop_y)
 
     @staticmethod
     def _in_reach(x, y, min_r, max_r):
@@ -121,7 +121,7 @@ class TaskCoordinatorNode(Node):
         cli.call_async(req).add_done_callback(lambda _: event.set())
         event.wait(timeout=timeout)
 
-    def _execute_pick_and_place(self, pick_x, pick_y, drop_x, drop_y):
+    def _execute_pick_and_place(self, pick_x, pick_y, pick_angle, drop_x, drop_y):
         self._state = State.EXECUTING
         z_safe = self.get_parameter('z_safe').value
         z_pick = self.get_parameter('z_pick').value
@@ -133,14 +133,14 @@ class TaskCoordinatorNode(Node):
                     req = GripperControl.Request(); req.open = open_
                     self._sync_call(self._gripper_cli, req)
 
-                def move(x, y, z):
+                def move(x, y, z, r=0.0):
                     req = MoveToXYZ.Request()
-                    req.x, req.y, req.z, req.r_head = x, y, z, 0.0
+                    req.x, req.y, req.z, req.r_head = x, y, z, r
                     self._sync_call(self._move_xyz_cli, req)
 
                 self._status('Opening gripper');    gripper(True)
-                self._status('Moving to pick');     move(pick_x, pick_y, z_safe)
-                self._status('Descending');          move(pick_x, pick_y, z_pick)
+                self._status('Moving to pick');     move(pick_x, pick_y, z_safe, r=pick_angle)
+                self._status('Descending');          move(pick_x, pick_y, z_pick, r=pick_angle)
                 self._status('Gripping');            gripper(False)
                 self._status('Moving to drop');     move(drop_x, drop_y, z_safe)
                 self._status('Descending to hand'); move(drop_x, drop_y, z_drop)
