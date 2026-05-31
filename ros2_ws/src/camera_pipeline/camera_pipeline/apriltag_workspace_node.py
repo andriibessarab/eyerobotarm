@@ -1,18 +1,27 @@
+import os
+import sys
+from pathlib import Path
+
+import cv2
+import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from pupil_apriltags import Detector
-import cv2
 
-from apriltag_msgs.msg import AprilTagDetection, AprilTagDetectionArray, Point
+from pick_interfaces.msg import TagDetection, TagDetectionArray
+
+_default = Path(__file__).resolve().parents[4] / 'provided_code'
+PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
+sys.path.insert(0, str(PROVIDED_CODE))
 
 
 class AprilTagWorkspaceNode(Node):
     """
     Subscribes to the overhead workspace camera, detects all AprilTags in each
-    frame, and publishes an AprilTagDetectionArray with only tag id and center
-    position populated.
+    frame, converts their pixel centres to robot XY via the homography matrix,
+    and publishes a pick_interfaces/TagDetectionArray.
     """
 
     def __init__(self):
@@ -29,38 +38,62 @@ class AprilTagWorkspaceNode(Node):
             f'min decision margin: {self._min_decision_margin:.1f}'
         )
 
+        h_path = PROVIDED_CODE / 'HomographyMatrix.npy'
+        cam_path = PROVIDED_CODE / 'camera_params.npz'
+
+        self._H = None
+        if h_path.exists():
+            self._H = np.load(str(h_path))
+            self.get_logger().info('Loaded HomographyMatrix.npy')
+        else:
+            self.get_logger().warn(f'HomographyMatrix.npy not found at {h_path}')
+
+        if cam_path.exists():
+            self.get_logger().info('Loaded camera_params.npz')
+        else:
+            self.get_logger().warn(f'camera_params.npz not found at {cam_path}')
+
         self._sub = self.create_subscription(
-            Image, 'workspace_camera/image_raw', self._cb_frame, 10
+            Image, '/workspace_camera/image_raw', self._cb_frame, 10
         )
-        self._pub = self.create_publisher(AprilTagDetectionArray, 'workspace/tag_detections', 10)
+        self._pub = self.create_publisher(TagDetectionArray, '/workspace/tag_detections', 10)
 
         self.get_logger().info('apriltag_workspace_node ready')
 
+    def _pixel_to_robot(self, u: float, v: float):
+        p = np.array([u, v, 1.0])
+        xy = self._H @ p
+        xy /= xy[2]
+        return float(xy[0]), float(xy[1])
+
     def _cb_frame(self, msg: Image):
+        array_msg = TagDetectionArray()
+
+        if self._H is None:
+            self._pub.publish(array_msg)
+            return
+
         gray = cv2.cvtColor(self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8'), cv2.COLOR_BGR2GRAY)
         tags = self.detector.detect(gray)
         self.get_logger().info(
             f'AprilTag detections in frame: {len(tags)}',
             throttle_duration_sec=2.0,
         )
-        detections = []
 
         for tag in tags:
             if float(tag.decision_margin) < self._min_decision_margin:
                 continue
 
-            det = AprilTagDetection()
-            det.id = int(tag.tag_id)
-            det.decision_margin = float(tag.decision_margin)
+            robot_x, robot_y = self._pixel_to_robot(float(tag.center[0]), float(tag.center[1]))
 
-            centre = Point()
-            centre.x = float(tag.center[0])
-            centre.y = float(tag.center[1])
-            det.centre = centre
-            detections.append(det)
+            t = TagDetection()
+            t.tag_id = int(tag.tag_id)
+            t.pixel_x = float(tag.center[0])
+            t.pixel_y = float(tag.center[1])
+            t.robot_x = robot_x
+            t.robot_y = robot_y
+            array_msg.detections.append(t)
 
-        array_msg = AprilTagDetectionArray()
-        array_msg.detections = detections
         self._pub.publish(array_msg)
 
 

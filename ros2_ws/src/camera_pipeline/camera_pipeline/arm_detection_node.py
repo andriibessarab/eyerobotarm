@@ -99,14 +99,19 @@ class ArmDetectionNode(Node):
             y = wrist.y * height
 
 
-            msg = Point()
-            msg.x = x
-            msg.y = y
-            msg.z = wrist.z
+            if self._H is None:
+                return
+
+            robot_x, robot_y = self._pixel_to_robot(x, y)
             confidence = getattr(wrist, 'visibility', 1.0)
-        
+
+            msg = Point()
+            msg.x = robot_x
+            msg.y = robot_y
+            msg.z = 0.0
+
             self.get_logger().info(
-                f'publishing arm_position: x={msg.x:.1f} y={msg.y:.1f} z={msg.z:.3f} confidence={confidence:.2f}',
+                f'publishing arm_position: robot=({robot_x:.1f}, {robot_y:.1f}) mm confidence={confidence:.2f}',
                 throttle_duration_sec=1.0,
             )
             self._pub.publish(msg)
