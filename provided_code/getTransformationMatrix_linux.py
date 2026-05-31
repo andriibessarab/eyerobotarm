@@ -11,14 +11,15 @@ Requirements:
 
 What it does:
   Moves the robot to 12 known positions in a 3x4 grid.
-  At each position you place a red marker where the tip was.
-  The script records the pixel coordinate of each marker and
-  computes the homography H that maps camera pixels → robot XY (mm).
+  At each position you press SPACE; the base then swings 90° out of the
+  way so you can place a red marker exactly where the tip was.
+  The script records the pixel coordinate of each marker and computes
+  the homography H that maps camera pixels → robot XY (mm).
   Saves result to provided_code/HomographyMatrix.npy.
 
 Coordinate grid (robot frame, mm):
-  X: 200, 230, 260   (depth from robot base)
-  Y: -80, -40, 0, 40 (left/right, positive = left when facing robot)
+  X: 180, 210, 240   (depth from robot base)
+  Y: -60, -20, 20, 60 (left/right, positive = left when facing robot)
   Z: -24             (pick height, just above table)
 """
 
@@ -29,6 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from pydobot import Dobot
+from pydobot.enums import PTPMode
 
 # -----------------------------------------------------------------------
 # Config
@@ -94,11 +96,10 @@ def detect_red_center(frame):
 
 
 # -----------------------------------------------------------------------
-# Calibration loop
+# Robot motion helpers
 # -----------------------------------------------------------------------
 
 def _move(robot, x, y, z, retries=5):
-    PTPMode = __import__('pydobot.enums', fromlist=['PTPMode']).PTPMode
     for attempt in range(retries):
         try:
             robot.ser.reset_input_buffer()
@@ -107,29 +108,65 @@ def _move(robot, x, y, z, retries=5):
             robot._set_ptp_cmd(x, y, z, 0.0, mode=PTPMode.MOVJ_XYZ, wait=True)
             time.sleep(0.5)
             return
-        except (AttributeError, Exception) as e:
+        except Exception as e:
             print(f'  Move failed (attempt {attempt+1}/{retries}): {e}')
             time.sleep(2.0)
     raise RuntimeError(f'Failed to move to ({x}, {y}, {z}) after {retries} attempts')
 
 
+def _move_joints(robot, j1, j2, j3, j4, retries=5):
+    for attempt in range(retries):
+        try:
+            robot.ser.reset_input_buffer()
+            robot.ser.reset_output_buffer()
+            time.sleep(0.2)
+            robot._set_ptp_cmd(j1, j2, j3, j4, mode=PTPMode.MOVJ_ANGLE, wait=True)
+            time.sleep(0.5)
+            return
+        except Exception as e:
+            print(f'  Joint move failed (attempt {attempt+1}/{retries}): {e}')
+            time.sleep(2.0)
+    raise RuntimeError(f'Failed joint move after {retries} attempts')
 
+
+# -----------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------
+
+def _wait_for_space(label: str):
+    while True:
+        ret, frame = cam.read()
+        display = undistort(frame)
+        cv2.putText(display, label, (20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+        cv2.imshow('Calibration', display)
+        if cv2.waitKey(1) & 0xFF == 32:
+            break
+
+
+# -----------------------------------------------------------------------
+# Calibration loop
+# -----------------------------------------------------------------------
 
 def collect_calibration(robot: Dobot) -> np.ndarray:
     pixel_points = []
 
     for i, (rx, ry) in enumerate(ROBOT_POINTS):
-        print(f'\n── Point {i+1}/12 ── robot ({rx:.0f}, {ry:.0f}) mm')
+        print(f'\n── Point {i+1}/{len(ROBOT_POINTS)} ── robot ({rx:.0f}, {ry:.0f}) mm')
 
-        # Move arm to calibration point
+        # 1. Move arm tip to the calibration position
         _move(robot, rx, ry, Z_CAL)
 
-        print('  Robot at position. Press SPACE when you can see the tip in the camera.')
-        _wait_for_space('Robot at point — SPACE to continue')
+        # 2. Wait for user to confirm tip is on the mark
+        print('  Robot at position. Press SPACE to swing base 90° out of the way.')
+        _wait_for_space(f'Pt {i+1}/{len(ROBOT_POINTS)} ({rx:.0f},{ry:.0f})mm — SPACE to swing')
 
-        # Move arm out of the way so we can see the table point
-        _move(robot, 200, 0, Z_CLEAR)
+        # 3. Swing base 90° so arm clears the camera view of the tip mark
+        pose = robot.pose()  # (x, y, z, r, j1, j2, j3, j4)
+        j1_cal, j2, j3, j4 = pose[4], pose[5], pose[6], pose[7]
+        _move_joints(robot, j1_cal + 90.0, j2, j3, j4)
 
+        # 4. User places red marker; capture when detected
         print('  Place a RED marker exactly where the tip was.')
         print('  SPACE to capture once the green dot appears on the marker.')
 
@@ -145,7 +182,7 @@ def collect_calibration(robot: Dobot) -> np.ndarray:
                 cv2.circle(display, center, 12, (0, 255, 0), 2)
                 detected = center
 
-            label = f'Point {i+1}/12  ({rx:.0f}, {ry:.0f}) mm  |  SPACE to capture'
+            label = f'Point {i+1}/{len(ROBOT_POINTS)}  ({rx:.0f}, {ry:.0f}) mm  |  SPACE to capture'
             cv2.putText(display, label, (20, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
             if detected:
@@ -164,18 +201,10 @@ def collect_calibration(robot: Dobot) -> np.ndarray:
                 cv2.destroyAllWindows()
                 sys.exit(0)
 
+        # 5. Swing base back before moving to next point
+        _move_joints(robot, j1_cal, j2, j3, j4)
+
     return np.array(pixel_points, dtype=np.float32)
-
-
-def _wait_for_space(label: str):
-    while True:
-        ret, frame = cam.read()
-        display = undistort(frame)
-        cv2.putText(display, label, (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
-        cv2.imshow('Calibration', display)
-        if cv2.waitKey(1) & 0xFF == 32:
-            break
 
 
 # -----------------------------------------------------------------------

@@ -24,9 +24,9 @@ class TaskCoordinatorNode(Node):
 
         self.declare_parameter('min_reach_mm', 135.0)
         self.declare_parameter('max_reach_mm', 320.0)
-        self.declare_parameter('z_safe', 40.0)
-        self.declare_parameter('z_pick', -45.0)
-        self.declare_parameter('z_drop', 10.0)
+        self.declare_parameter('z_safe', 45.0)
+        self.declare_parameter('z_pick', -37.0)
+        self.declare_parameter('z_drop', 17.0)
 
         self._state = State.IDLE
         self._latest_tags: TagDetectionArray | None = None
