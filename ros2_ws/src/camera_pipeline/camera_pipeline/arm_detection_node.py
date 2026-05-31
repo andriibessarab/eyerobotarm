@@ -74,6 +74,27 @@ class ArmDetectionNode(Node):
         self._pub_pixel = self.create_publisher(Point, '/workspace/arm_position_pixel', 10)
 
         self.get_logger().info('arm_detection_node ready')
+    
+    def get_hand_normal(hand):
+        wrist = np.array([hand.landmark[0].x,
+                        hand.landmark[0].y,
+                        hand.landmark[0].z])
+
+        index = np.array([hand.landmark[5].x,
+                        hand.landmark[5].y,
+                        hand.landmark[5].z])
+
+        pinky = np.array([hand.landmark[17].x,
+                        hand.landmark[17].y,
+                        hand.landmark[17].z])
+
+        v1 = index - wrist
+        v2 = pinky - wrist
+
+        normal = np.cross(v1, v2)
+        normal = normal / (np.linalg.norm(normal) + 1e-6)
+
+        return normal
 
     def _pixel_to_robot(self, u: float, v: float):
         p = np.array([u, v, 1.0])
@@ -99,6 +120,11 @@ class ArmDetectionNode(Node):
             # Palm centre: midpoint of wrist and middle-finger MCP
             palm_x = ((wrist.x + middle_mcp.x) / 2) * width
             palm_y = ((wrist.y + middle_mcp.y) / 2) * height
+            hand_normal = self.get_hand_normal(hand_landmarks[0])
+            if hand_normal[2] < 0:
+                self.get_logger().info('Hand facing away from camera — ignoring', throttle_duration_sec=1.0)
+            else:
+                self.get_logger().info('Hand facing towards camera — processing', throttle_duration_sec=1.0)
 
             confidence = wrist.visibility if wrist.visibility is not None else 1.0
 
