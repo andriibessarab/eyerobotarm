@@ -1,5 +1,5 @@
 #!/bin/bash
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source /opt/ros/jazzy/setup.bash
 source "$REPO/ros2_ws/install/setup.bash"
 

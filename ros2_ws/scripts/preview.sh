@@ -1,8 +1,8 @@
 #!/bin/bash
 # Launch camera stream + detection + live preview window (no arm required).
-# Usage: bash ~/Desktop/S26-Toyota-Innovation-Challenge/preview.sh
+# Usage: bash ~/Desktop/S26-Toyota-Innovation-Challenge/ros2_ws/scripts/preview.sh
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source /opt/ros/jazzy/setup.bash
 source "$REPO/ros2_ws/install/setup.bash"
