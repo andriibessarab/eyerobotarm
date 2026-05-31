@@ -12,6 +12,7 @@ from sensor_msgs.msg import Image
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+from std_msgs.msg import Bool
 
 _default = Path(__file__).resolve().parents[4] / 'provided_code'
 PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
@@ -72,7 +73,7 @@ class ArmDetectionNode(Node):
         )
         self._pub       = self.create_publisher(Point, '/workspace/arm_position',       10)
         self._pub_pixel = self.create_publisher(Point, '/workspace/arm_position_pixel', 10)
-
+        self._pub_palm = self.create_publisher(Bool, '/workspace/palm', 10)
         self.get_logger().info('arm_detection_node ready')
     
     @staticmethod
@@ -113,6 +114,14 @@ class ArmDetectionNode(Node):
             # Palm centre: midpoint of wrist and middle-finger MCP
             palm_x = ((wrist.x + middle_mcp.x) / 2) * width
             palm_y = ((wrist.y + middle_mcp.y) / 2) * height
+            normal = self.get_hand_normal(hand_landmarks)
+
+            if result.handedness[0][0].category_name == 'Left':
+                normal = -normal  
+            if (normal[2] < 0):  
+                self.get_logger().info('Palm towards camera', throttle_duration_sec=0.5)
+            else:
+                self.get_logger().info(f'Palm away from camera', throttle_duration_sec=0.5)
             pixel_msg = Point()
             pixel_msg.x = palm_x
             pixel_msg.y = palm_y
@@ -129,6 +138,9 @@ class ArmDetectionNode(Node):
                     throttle_duration_sec=1.0,
                 )
                 self._pub.publish(pos_msg)
+                palm_msg = Bool()
+                palm_msg.data = bool(normal[2] < 0)
+                self._pub_palm.publish(palm_msg)
         else:
             self.get_logger().warn('No hand detected', throttle_duration_sec=2.0)
 
