@@ -145,6 +145,7 @@ class TaskCoordinatorNode(Node):
                 self._status('Moving to drop');     move(drop_x, drop_y, z_safe)
                 self._status('Descending to hand'); move(drop_x, drop_y, z_drop)
                 self._status('Releasing');           gripper(True)
+                self._status('Lifting away');        move(drop_x, drop_y, z_safe)
                 self._status('Closing gripper');     gripper(False)
                 self._status('Homing');              self._sync_call(self._home_cli, Trigger.Request())
             finally:
