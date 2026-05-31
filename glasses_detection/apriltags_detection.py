@@ -6,10 +6,8 @@ from pyapriltags import Detector
 
 STREAM_URL = "tcp://10.12.194.1:5000"
 
-STARE_TIME = 3 # Seconds
-DISTANCE_THRESHOLD = 150 # Pixels
-
-OFFSET_Y = 50 # Pixels
+STARE_TIME = 1 # Seconds
+DISTANCE_THRESHOLD = 50 # Pixels
 
 def main():
     # Use CAP_DSHOW on Windows to make webcam opening more reliable.
@@ -18,11 +16,13 @@ def main():
     if not cap.isOpened():
         print("Error: Could not open camera.")
         return
+    
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     detector = Detector(
-        families="tag16h5",
+        families="tag36h11",
         nthreads=1,
-        quad_decimate=1.0,
+        quad_decimate=2.0,
         quad_sigma=0.0,
         refine_edges=1,
         decode_sharpening=0.25,
@@ -41,14 +41,15 @@ def main():
             print("Error: Could not read frame.")
             break
 
+        frame = cv2.flip(frame, -1)
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
 
         detections = detector.detect(gray)
 
-        if not detections:
-            detected_tag = None
-            continue
-        elif detected_tag and detected_tag[0] not in [d.tag_id for d in detections]:
+        if detected_tag and detected_tag[0] not in [d.tag_id for d in detections]:
+            print(f"Tag ID {detected_tag[0]} lost. No longer detected")
             detected_tag = None
 
         for detection in detections:
@@ -59,13 +60,11 @@ def main():
             center = detection.center
             corners = detection.corners
 
-            frame_center = (gray.shape[1] / 2, gray.shape[0] / 2)
+            frame_x_center = gray.shape[1] / 2
 
-            center[1] -= OFFSET_Y
+            x_distance = math.fabs(detection.center[0] - frame_x_center)
 
-            distance_from_center = math.dist(center, frame_center)
-
-            if distance_from_center > DISTANCE_THRESHOLD:
+            if x_distance > DISTANCE_THRESHOLD:
                 continue
 
             if detected_tag is not None and detected_tag[0] == tag_id:
@@ -75,15 +74,16 @@ def main():
                 else:
                     detected_tag = None
                     tag_detected = detection
+                    print(f"Tag ID {tag_id} detected at distance {x_distance:.2f} pixels from center.")
 
             elif detected_tag is not None:
                 # Take the closest tag to the center if multiple tags are detected
-                if detected_tag[1] < distance_from_center:
+                if detected_tag[1] < x_distance:
                     continue
 
-            detected_tag = [tag_id, distance_from_center, datetime.now()]
+            detected_tag = [tag_id, x_distance, datetime.now()]
 
-            print(f"Tag ID {tag_id} detected at distance {distance_from_center:.2f} pixels from center.")
+            print(f"Tag ID {tag_id} detected at distance {x_distance:.2f} pixels from center.")
 
         if tag_detected is not None:
             # TODO: Connect this with the rest of the system
