@@ -27,12 +27,6 @@ def generate_launch_description():
         ),
         Node(
             package='camera_pipeline',
-            executable='object_detection_node',
-            name='object_detection',
-            output='screen',
-        ),
-        Node(
-            package='camera_pipeline',
             executable='apriltag_workspace_node',
             name='apriltag_workspace',
             output='screen',

@@ -30,29 +30,6 @@ Captures frames from the glasses-mounted gaze camera and publishes them at 30 Hz
 
 ---
 
-### `object_detection_node`
-
-Runs CV detection on workspace camera frames and publishes one `ObjectDetection` message per detected object per frame.
-
-Two detection passes per frame:
-
-- **Drop zones** — Hough circle transform on blurred grayscale. Detects the circular plate targets.
-- **Red targets** — HSV segmentation (two hue ranges to catch both sides of the red wrap-around) followed by contour filtering (min area 800 px²).
-
-Pixel centres are converted to robot XY (mm) via the homography matrix loaded from `provided_code/HomographyMatrix.npy`.
-
-| | |
-|---|---|
-| **Subscribes** | `/workspace_camera/image_raw`, `/gaze_camera/image_raw` |
-| **Publishes** | `~/detected_objects` (`pick_interfaces/msg/ObjectDetection`) |
-| **Env var** | `PROVIDED_CODE_PATH` — path to `provided_code/` directory (default: `../provided_code` relative to the node file) |
-
-Calibration files required at startup (warnings logged if missing; detection silently skipped):
-- `HomographyMatrix.npy` — pixel-to-robot homography
-- `camera_params.npz` — intrinsic camera matrix and distortion coefficients (used to undistort frames)
-
----
-
 ### `apriltag_workspace_node`
 
 Detects all `tag16h5` AprilTags visible in the overhead workspace camera, converts each tag's pixel centre to robot XY, and publishes a `TagDetectionArray`.
@@ -123,7 +100,6 @@ source install/setup.bash
 # Run individual nodes
 ros2 run camera_pipeline workspace_camera_node --ros-args -p camera_index:=0
 ros2 run camera_pipeline gaze_camera_node       --ros-args -p camera_index:=1
-ros2 run camera_pipeline object_detection_node
 ros2 run camera_pipeline apriltag_workspace_node
 ros2 run camera_pipeline apriltag_gaze_node
 ros2 run camera_pipeline arm_detection_node

@@ -6,22 +6,6 @@ ROS2 C++ CMake package containing all custom message and service definitions use
 
 ## Messages
 
-### `ObjectDetection.msg`
-
-One detected object from the `object_detection_node`. Published per object per frame.
-
-| Field | Type | Description |
-|---|---|---|
-| `header` | `std_msgs/Header` | Timestamp of the source frame |
-| `label` | `string` | `"drop_zone"` (Hough circle) or `"target"` (red HSV blob) |
-| `pixel_x` | `float64` | Detection centre X in image pixels |
-| `pixel_y` | `float64` | Detection centre Y in image pixels |
-| `robot_x` | `float64` | Detection centre X in robot frame (mm) |
-| `robot_y` | `float64` | Detection centre Y in robot frame (mm) |
-| `confidence` | `float64` | Detection confidence (currently always `1.0`) |
-
----
-
 ### `TagDetection.msg`
 
 One detected AprilTag from the `apriltag_workspace_node`.

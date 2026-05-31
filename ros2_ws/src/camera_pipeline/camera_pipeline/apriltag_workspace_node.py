@@ -22,7 +22,7 @@ class AprilTagWorkspaceNode(Node):
     and publishes a TagDetectionArray.
 
     TODO: implement detection loop in _run_detection
-      1. undistort frame (lazy, same pattern as object_detection_node)
+      1. undistort frame (lazy — build cv2.initUndistortRectifyMap on first frame)
       2. cv2.aruco.detectMarkers(frame, DICT_APRILTAG_36H11)
       3. for each marker: pixel_to_robot → build TagDetection
       4. publish TagDetectionArray

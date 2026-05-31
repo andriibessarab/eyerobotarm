@@ -21,7 +21,6 @@ setup(
         'console_scripts': [
             'workspace_camera_node = camera_pipeline.workspace_camera_node:main',
             'gaze_camera_node = camera_pipeline.gaze_camera_node:main',
-            'object_detection_node = camera_pipeline.object_detection_node:main',
             'preview_node = camera_pipeline.preview_node:main',
             'apriltag_gaze_node = camera_pipeline.apriltag_gaze_node:main',
             'apriltag_workspace_node = camera_pipeline.apriltag_workspace_node:main',

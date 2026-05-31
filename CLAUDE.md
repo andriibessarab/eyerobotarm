@@ -48,8 +48,7 @@ python pickCVBlock.py                 # standalone pick-place loop
 ### ROS2 node graph
 
 ```
-workspace_camera_node ──► /workspace_camera/image_raw ──┬──► object_detection_node ──► ~/detected_objects
-                                                         ├──► apriltag_workspace_node ──► /workspace/tag_detections
+workspace_camera_node ──► /workspace_camera/image_raw ──┬──► apriltag_workspace_node ──► /workspace/tag_detections
                                                          ├──► arm_detection_node ──────► /workspace/arm_position
                                                          └──► preview_node (debug window)
 
@@ -69,7 +68,7 @@ gaze_camera_node ──────► /gaze_camera/image_raw ──────
 | Package | Nodes |
 |---|---|
 | `pick_interfaces` | msgs/srvs only (C++ CMake) |
-| `camera_pipeline` | `workspace_camera_node`, `gaze_camera_node`, `object_detection_node`, `apriltag_workspace_node`, `apriltag_gaze_node`, `arm_detection_node`, `preview_node` |
+| `camera_pipeline` | `workspace_camera_node`, `gaze_camera_node`, `apriltag_workspace_node`, `apriltag_gaze_node`, `arm_detection_node`, `preview_node` |
 | `dobot_arm` | `dobot_arm_node` + `dobot_hardware.py` abstraction |
 | `task_coordinator` | `task_coordinator_node` |
 
@@ -117,7 +116,6 @@ Trigger: `apriltag_gaze_node` publishes a non-negative `tag_id` on `/gaze/gazed_
 
 | Node | Status |
 |---|---|
-| `object_detection_node.py` | Working — detects drop zones (Hough circles) and red targets (HSV) |
 | `arm_detection_node.py` | Working — wrist tracking via MediaPipe Hands |
 | `dobot_arm_node.py` | Working — uses `pydobot` via `dobot_hardware.py` |
 | `task_coordinator_node.py` | Working — full async pick-and-place chain implemented |
