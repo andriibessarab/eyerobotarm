@@ -4,70 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-S26 Toyota Innovation Challenge — a collaborative robotics system where a Dobot Magician arm works alongside human workers to pick and place parts (velcro tags, 3D-printed brake calipers). The system uses an Orbbec overhead camera for workspace detection and optionally a gaze camera.
+S26 Toyota Innovation Challenge — a collaborative robotics system where a Dobot Magician arm works alongside human workers to pick and place parts (velcro tags, 3D-printed brake calipers). The operator wears smart glasses with a Raspberry Pi camera; an Orbbec overhead camera monitors the workspace. Gaze direction (via AprilTag tracking on the glasses camera) triggers pick-and-place.
 
 There are two parallel codebases:
-- **`provided_code/`** — standalone Python scripts (no ROS2) that run directly against the Dobot hardware via its DLL. This is the original starter code and the ground-truth for hardware interaction.
-- **`ros2_ws/`** — a ROS2 workspace that wraps the provided code into composable nodes. The hardware integration is still largely stubbed with `# TODO` markers.
+- **`provided_code/`** — standalone Python scripts (no ROS2) that run directly against the Dobot hardware. Ground truth for CV algorithms and arm control.
+- **`ros2_ws/`** — a ROS2 (Jazzy) workspace that wraps everything into composable nodes.
 
 ## Build & Run
 
-### ROS2 workspace (primary development path)
-
 ```bash
-# Source ROS2 first (Ubuntu/Jazzy or Humble)
-source /opt/ros/jazzy/setup.bash   # adjust distro as needed
+# Build (from repo root)
+source /opt/ros/jazzy/setup.bash
+cd ros2_ws && colcon build && source install/setup.bash
 
-# Build all packages from the workspace root
-cd ros2_ws
-colcon build
+# Full system (all nodes including arm)
+bash start.sh
 
-# Source the overlay after building
-source install/setup.bash
+# Camera + detection + live preview only (no arm required)
+bash preview.sh
 
-# Launch the full system (all nodes)
-ros2 launch ../ros2_ws/launch/system.launch.py
-
-# Run a single node directly (example)
-ros2 run dobot_arm dobot_arm_node
+# Single node
 ros2 run camera_pipeline object_detection_node
-ros2 run task_coordinator task_coordinator_node
+ros2 run camera_pipeline preview_node
 ```
 
-### Standalone provided_code (legacy, hardware-only)
+### Standalone provided_code
 
 ```bash
 cd provided_code
-# Camera calibration (one-time, only needed for a different camera)
-python calibrateCamera.py
-
-# Generate homography matrix (required before pick-place)
-python getTransformationMatrix.py
-
-# Main pick-place script
-python pickCVBlock.py
-
-# Basic arm control tests
-python testDobot.py
+python getTransformationMatrix_linux.py  # regenerate HomographyMatrix.npy (after repositioning camera/arm)
+python calibrateCamera.py                # regenerate camera_params.npz (only when switching cameras)
+python pickCVBlock.py                    # main pick-place script (Windows DLL path)
 ```
 
 ## Architecture
 
-### ROS2 node graph
+### Full node graph
 
 ```
-workspace_camera_node  ──┐
-                          ├─► /workspace_camera/image_raw ─► object_detection_node ──► ~/detected_objects
-gaze_camera_node       ──┘         /gaze_camera/image_raw ─►          │
-                                                                        ▼
-                                                            task_coordinator_node
-                                                              │  calls services on:
-                                                              └─► dobot_arm_node
-                                                                    ~/move_to_xyz
-                                                                    ~/move_joints
-                                                                    ~/gripper_control
-                                                                    ~/home
-                                                                    ~/rotate_end_effector
+workspace_camera_node ──► /workspace_camera/image_raw ──┬─► object_detection_node ──► ~/detected_objects
+                                                          ├─► apriltag_workspace_node ──► /workspace/tag_detections
+                                                          └─► arm_detection_node ──────► /workspace/arm_position
+
+gaze_camera_node ──────► /gaze_camera/image_raw ────────► apriltag_gaze_node ──────────► /gaze/gazed_tag_id
+
+/workspace/tag_detections ──┐
+/workspace/arm_position ────┼─► task_coordinator_node ──► dobot_arm_node services
+/gaze/gazed_tag_id ─────────┘
+
+preview_node subscribes to /workspace_camera/image_raw + ~/detected_objects → cv2.imshow
 ```
 
 ### Packages
@@ -75,15 +60,17 @@ gaze_camera_node       ──┘         /gaze_camera/image_raw ─►          
 | Package | Purpose |
 |---|---|
 | `pick_interfaces` | Custom ROS2 msg/srv definitions (C++ CMake package) |
-| `camera_pipeline` | `workspace_camera_node`, `gaze_camera_node`, `object_detection_node` |
-| `dobot_arm` | `dobot_arm_node` — wraps `provided_code/dobotArm.py` into ROS2 services |
-| `task_coordinator` | `task_coordinator_node` — state machine: IDLE → DETECTING_TARGET → EXECUTING |
+| `camera_pipeline` | All camera and vision nodes |
+| `dobot_arm` | `dobot_arm_node` + `dobot_hardware.py` HAL |
+| `task_coordinator` | State machine orchestrating pick-and-place |
 
 ### Custom interfaces (`pick_interfaces`)
 
 **Messages**
 - `ObjectDetection.msg` — `header`, `label`, `pixel_x/y`, `robot_x/y`, `confidence`
 - `RobotPose.msg` — `x/y/z/r`, `j1/j2/j3/j4`
+- `TagDetection.msg` — `tag_id`, `pixel_x/y`, `robot_x/y`
+- `TagDetectionArray.msg` — `header`, `detections[]`
 
 **Services**
 - `MoveToXYZ.srv` — `x, y, z, r_head → success, message`
@@ -91,30 +78,61 @@ gaze_camera_node       ──┘         /gaze_camera/image_raw ─►          
 - `GripperControl.srv` — `open (bool) → success`
 - `PickAndPlace.srv` — `pick_x/y, drop_x/y → success, message`
 
+### Hardware abstraction
+
+`dobot_arm/dobot_hardware.py` wraps the `pydobot` library (Linux-compatible). The Windows-only DLL path (`provided_code/lib/DobotDll.dll`) is only used by the standalone `provided_code/` scripts.
+
+`dobot_arm_node.py` calls `dobot_hardware.connect(port)` on init — the node will crash if the arm is not connected on `/dev/ttyUSB0`.
+
 ### Coordinate system & calibration files
 
-- `provided_code/HomographyMatrix.npy` — maps camera pixel coords to robot XY (mm). Must be regenerated by running `getTransformationMatrix.py` whenever the camera or arm is repositioned.
-- `provided_code/camera_params.npz` — intrinsic camera matrix + distortion coeffs. Only needs regeneration when switching cameras.
-- Both files are loaded at runtime in `object_detection_node.py` via the `PROVIDED_CODE_PATH` env var (defaults to `../provided_code` relative to the installed node).
+- `provided_code/HomographyMatrix.npy` — maps camera pixel coords → robot XY (mm). Also saved as `provided_code/H_matrix.json`. Must be regenerated by running `getTransformationMatrix_linux.py` whenever the camera or arm is repositioned.
+- `provided_code/camera_params.npz` — intrinsic camera matrix + distortion coeffs.
+- Both files are loaded at runtime by `object_detection_node`, `apriltag_workspace_node`, and `arm_detection_node` via the `PROVIDED_CODE_PATH` env var (defaults to `../provided_code` relative to the installed node).
 
-### Key constants in `provided_code/pickCVBlock.py`
+### Task coordinator state machine
 
-```python
-Z_SAFE = 40    # mm — clearance height for horizontal moves
-Z_PICK = -25   # mm — height to actually pick an object
-STABILITY_LIMIT = 60  # frames (~2 s at 30 fps) before a detection is "locked"
-PIXEL_TOLERANCE = 10  # max pixel drift still considered stationary
+```
+IDLE ──(gaze_tag_id ≥ 0)──► EXECUTING ──(pick-and-place chain done)──► IDLE
 ```
 
-### Hardware wiring
+Pick position comes from `/workspace/tag_detections` (matched by `tag_id`). Drop position comes from `/workspace/arm_position` (human wrist detected by `arm_detection_node`), with a fallback to `drop_fallback_x/y` parameters.
 
-- `dobot_arm_node` hardware calls are all stubbed. To activate hardware, uncomment `import dobotArm` / `from lib import DobotDllType as dType` and the `# TODO` lines in `dobot_arm_node.py`, then set the correct COM port in `dobotArm.py` (`ConnectDobot(api, "COM7", 115200)`).
-- The Dobot DLL (`provided_code/lib/DobotDll.dll`) is Windows-only; on Linux the arm must be driven via an alternative interface or simulated.
+Pick-and-place chain (chained async ROS2 service calls):
+`open gripper → move safe → move pick → close gripper → lift safe → move drop → open gripper → home`
 
-## What is stubbed / needs implementation
+### Gaze camera setup (Raspberry Pi)
 
-The ROS2 layer is a scaffold. Key `# TODO` gaps to fill:
+The gaze camera is a Raspberry Pi Zero 2W running `pi_scripts/stream_camera.py`, streaming MJPEG over HTTP on port 8080. The Pi connects via USB gadget networking:
 
-1. **`object_detection_node.py`** — call `phase_detect_plates()` / `phase_detect_targets()` from `pickCVBlock.py` and publish `ObjectDetection` messages.
-2. **`dobot_arm_node.py`** — uncomment hardware init and wire each service callback to the matching `dobotArm.*` call.
-3. **`task_coordinator_node.py`** — implement `_execute_pick_and_place()` as an async service call chain; add stability/gaze-lock check before committing to EXECUTING.
+- Pi #1 (overhead): `192.168.7.2:8080/stream.mjpg` → main computer `192.168.7.1`
+- Pi #2 (gaze): `192.168.8.2:8080/stream.mjpg` → main computer `192.168.8.1`
+
+To deploy: copy `pi_scripts/stream_camera.py` to the Pi, uncomment the `picamera2` lines, and run `python3 stream_camera.py`.
+
+`glasses_detection/apriltags_detection.py` is a standalone script (uses `pyapriltags`, tag family `tag16h5`) for testing the gaze stream independently at `tcp://10.12.194.1:5000`.
+
+### Key constants
+
+```python
+# task_coordinator_node.py
+Z_SAFE = 40.0   # mm — clearance height for horizontal moves
+Z_PICK = -25.0  # mm — grip height
+
+# apriltag_gaze_node.py (ROS2 parameters)
+stability_frames = 60   # consecutive frames before tag is "locked"
+center_tolerance = 100  # pixels from frame center
+
+# dobot_hardware.py
+HOME_POS = (200.0, 100.0, 50.0, 0.0)  # x, y, z, r_head
+```
+
+## What is still stubbed (TODO)
+
+1. **`arm_detection_node.py`** — `_cb_frame` needs MediaPipe Hands detection: undistort → `mp.solutions.hands.Hands.process(rgb)` → wrist landmark → `_pixel_to_robot` → publish `geometry_msgs/Point` on `/workspace/arm_position`.
+
+2. **`apriltag_gaze_node.py`** — `_cb_frame` needs `cv2.aruco.detectMarkers(frame, DICT_APRILTAG_36H11)`, find marker closest to frame center within `center_tolerance`, stability counter, publish `Int32` on `/gaze/gazed_tag_id` (-1 when not locked).
+
+3. **`apriltag_workspace_node.py`** — `_cb_frame` needs lazy undistort + `cv2.aruco.detectMarkers` → `_pixel_to_robot` for each marker → publish `TagDetectionArray` on `/workspace/tag_detections`.
+
+4. **`pi_scripts/stream_camera.py`** — `picamera2` import and recording calls are commented out; uncomment on actual Pi hardware.
