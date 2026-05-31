@@ -85,6 +85,18 @@ bool open    # true = release, false = grip
 bool success
 ```
 
+### `SetSpeed.srv`
+
+Set arm velocity and acceleration. Called by `task_coordinator_node` before the slow final approach to the human hand, and again to restore speed after release.
+
+| Field | Type | Description |
+|---|---|---|
+| `velocity` | `int32` | Speed 1–100 % of maximum |
+| `acceleration` | `int32` | Acceleration 1–100 % of maximum |
+| `success` | `bool` | (response) Whether the command succeeded |
+
+---
+
 ### `PickAndPlace.srv`
 
 High-level pick-and-place (defined but not currently called by any node — orchestration is done directly in `task_coordinator_node`).

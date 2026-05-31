@@ -69,6 +69,13 @@ open gripper
 | `approach_velocity` | int | `20` | Arm speed % for final descent near human |
 | `exec_timeout` | float | `15.0` | Seconds before EXECUTING auto-resets to IDLE |
 
+**Hardcoded Z heights** (constants in source — tune by editing `task_coordinator_node.py`):
+
+| Constant | Value | Description |
+|---|---|---|
+| `Z_SAFE` | `40.0 mm` | Clearance height for all horizontal moves |
+| `Z_PICK` | `-25.0 mm` | Descent height to grip the object |
+
 ---
 
 ## Running
