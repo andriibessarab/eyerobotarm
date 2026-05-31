@@ -38,7 +38,8 @@ class AprilTagGazeNode(Node):
         self._sub = self.create_subscription(
             Image, '/gaze_camera/image_raw', self._cb_frame, 10
         )
-        self._pub = self.create_publisher(Int32, '/gaze/gazed_tag_id', 10)
+        self._pub          = self.create_publisher(Int32, '/gaze/gazed_tag_id', 10)
+        self._tracking_pub = self.create_publisher(Int32, '~/tracking',         10)
 
         self.get_logger().info('apriltag_gaze_node ready')
 
@@ -46,6 +47,11 @@ class AprilTagGazeNode(Node):
         msg = Int32()
         msg.data = tag_id
         self._pub.publish(msg)
+
+    def _publish_tracking(self):
+        msg = Int32()
+        msg.data = self._candidate[0] if self._candidate is not None else -1
+        self._tracking_pub.publish(msg)
 
     def _cb_frame(self, msg: Image):
         stare_time = self.get_parameter('stare_time').value
@@ -61,6 +67,7 @@ class AprilTagGazeNode(Node):
         if ids is None or len(ids) == 0:
             self._candidate = None
             self._publish(-1)
+            self._publish_tracking()
             return
 
         flat_ids = ids.flatten().tolist()
@@ -87,16 +94,19 @@ class AprilTagGazeNode(Node):
         if best_tag_id is None:
             self._candidate = None
             self._publish(-1)
+            self._publish_tracking()
             return
 
         if self._candidate is None or self._candidate[0] != best_tag_id:
             self._candidate = [best_tag_id, best_dist, datetime.now()]
             self._publish(-1)
+            self._publish_tracking()
             return
 
         elapsed = (datetime.now() - self._candidate[2]).total_seconds()
         if elapsed < stare_time:
             self._publish(-1)
+            self._publish_tracking()
             return
 
         # Stare time exceeded — lock confirmed
@@ -105,6 +115,7 @@ class AprilTagGazeNode(Node):
         )
         self._publish(best_tag_id)
         self._candidate = None
+        self._publish_tracking()
 
 
 def main(args=None):
