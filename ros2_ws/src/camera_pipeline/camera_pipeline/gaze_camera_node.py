@@ -44,11 +44,14 @@ class GazeCameraNode(Node):
             self.get_logger().info(f'gaze_camera_node ready (camera_source={src})')
 
     def _drain_loop(self):
+        import time
         while rclpy.ok():
             ret, frame = self._cap.read()
             if ret:
                 with self._frame_lock:
                     self._latest_frame = frame
+            else:
+                time.sleep(0.1)  # prevent tight loop hammering ffmpeg on stream failure
 
     def _publish_latest(self):
         with self._frame_lock:
