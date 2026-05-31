@@ -13,27 +13,35 @@ USB_CAMERA_INDEX="${USB_CAMERA_INDEX:-0}"
 cleanup() {
     echo ""
     echo "Shutting down..."
-    kill $CAM_PID $DET_PID $ARM_PID $PREV_PID 2>/dev/null
-    wait $CAM_PID $DET_PID $ARM_PID $PREV_PID 2>/dev/null
+    kill $CAM_PID $GAZE_PID $ARM_PID $TAG_PID $GAZE_TAG_PID $PREV_PID 2>/dev/null
+    wait $CAM_PID $GAZE_PID $ARM_PID $TAG_PID $GAZE_TAG_PID $PREV_PID 2>/dev/null
     exit 0
 }
 trap cleanup SIGINT SIGTERM
 
-# Launch the USB camera as the workspace feed.
+# Workspace camera
 "$CAMERA_BIN/workspace_camera_node" --ros-args -p camera_index:="$USB_CAMERA_INDEX" &
 CAM_PID=$!
 sleep 2
 
-"$CAMERA_BIN/object_detection_node" &
-DET_PID=$!
+# Gaze camera (Pi TCP stream)
+"$CAMERA_BIN/gaze_camera_node" &
+GAZE_PID=$!
 sleep 1
 
+# Hand/arm detection
 "$CAMERA_BIN/arm_detection_node" &
 ARM_PID=$!
 sleep 1
 
+# Workspace AprilTag detection
 "$CAMERA_BIN/apriltag_workspace_node" &
 TAG_PID=$!
+sleep 1
+
+# Gaze AprilTag detection
+"$CAMERA_BIN/apriltag_gaze_node" &
+GAZE_TAG_PID=$!
 sleep 1
 
 "$CAMERA_BIN/preview_node" &

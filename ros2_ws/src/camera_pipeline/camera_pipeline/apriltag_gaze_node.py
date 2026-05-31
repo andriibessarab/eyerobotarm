@@ -3,6 +3,7 @@ from datetime import datetime
 
 import cv2
 import rclpy
+from pyapriltags import Detector
 from rclpy.node import Node
 from std_msgs.msg import Int32
 from sensor_msgs.msg import Image
@@ -11,28 +12,32 @@ from cv_bridge import CvBridge
 
 class AprilTagGazeNode(Node):
     """
-    Subscribes to the gaze camera, detects tag16h5 AprilTags in each frame,
+    Subscribes to the gaze camera, detects tag36h11 AprilTags in each frame,
     and publishes the tag ID that has been stably centered for `stare_time`
     seconds. Publishes -1 when no tag is locked.
 
-    Detection uses cv2.aruco with DICT_APRILTAG_16h5 (equivalent to tag16h5).
     Logic ported from glasses_detection/apriltags_detection.py.
     """
 
     def __init__(self):
         super().__init__('apriltag_gaze_node')
 
-        self.declare_parameter('stare_time', 3.0)
-        self.declare_parameter('center_tolerance', 150)
-        self.declare_parameter('center_offset_y', 50)
+        self.declare_parameter('stare_time', 1.0)
+        self.declare_parameter('center_tolerance', 50)
 
         self._bridge = CvBridge()
 
-        _dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_16h5)
-        _params = cv2.aruco.DetectorParameters()
-        self._detector = cv2.aruco.ArucoDetector(_dict, _params)
+        self._detector = Detector(
+            families='tag36h11',
+            nthreads=1,
+            quad_decimate=2.0,
+            quad_sigma=0.0,
+            refine_edges=1,
+            decode_sharpening=0.25,
+            debug=0,
+        )
 
-        # [tag_id, distance, start_time] while accumulating; None when idle
+        # [tag_id, x_distance, start_time] while accumulating; None when idle
         self._candidate = None
 
         self._sub = self.create_subscription(
@@ -54,42 +59,35 @@ class AprilTagGazeNode(Node):
         self._tracking_pub.publish(msg)
 
     def _cb_frame(self, msg: Image):
-        stare_time = self.get_parameter('stare_time').value
+        stare_time       = self.get_parameter('stare_time').value
         center_tolerance = self.get_parameter('center_tolerance').value
-        center_offset_y = self.get_parameter('center_offset_y').value
 
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape
+        gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        corners, ids, _ = self._detector.detectMarkers(gray)
-
-        if ids is None or len(ids) == 0:
-            self._candidate = None
-            self._publish(-1)
-            self._publish_tracking()
-            return
-
-        flat_ids = ids.flatten().tolist()
+        detections = self._detector.detect(gray)
 
         # Drop candidate if its tag is no longer visible
-        if self._candidate is not None and self._candidate[0] not in flat_ids:
+        visible_ids = [d.tag_id for d in detections]
+        if self._candidate is not None and self._candidate[0] not in visible_ids:
             self._candidate = None
 
-        frame_center = (w / 2, h / 2)
+        frame_x_center = gray.shape[1] / 2
 
-        # Find closest tag to (adjusted) frame center within tolerance
-        best_tag_id = None
-        best_dist = float('inf')
-        for i, tag_id in enumerate(flat_ids):
-            center = corners[i][0].mean(axis=0).copy()
-            center[1] -= center_offset_y
-            dist = math.dist(center, frame_center)
-            if dist > center_tolerance:
+        best_tag_id  = None
+        best_x_dist  = float('inf')
+
+        for detection in detections:
+            if detection.decision_margin < 10:
                 continue
-            if dist < best_dist:
-                best_dist = dist
-                best_tag_id = tag_id
+
+            x_dist = math.fabs(detection.center[0] - frame_x_center)
+            if x_dist > center_tolerance:
+                continue
+
+            if x_dist < best_x_dist:
+                best_x_dist = x_dist
+                best_tag_id = detection.tag_id
 
         if best_tag_id is None:
             self._candidate = None
@@ -98,7 +96,7 @@ class AprilTagGazeNode(Node):
             return
 
         if self._candidate is None or self._candidate[0] != best_tag_id:
-            self._candidate = [best_tag_id, best_dist, datetime.now()]
+            self._candidate = [best_tag_id, best_x_dist, datetime.now()]
             self._publish(-1)
             self._publish_tracking()
             return

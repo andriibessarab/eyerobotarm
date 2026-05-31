@@ -10,6 +10,8 @@ from geometry_msgs.msg import Point
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 
 _default = Path(__file__).resolve().parents[4] / 'provided_code'
 PROVIDED_CODE = Path(os.environ.get('PROVIDED_CODE_PATH', str(_default)))
@@ -32,14 +34,17 @@ class ArmDetectionNode(Node):
         self._map1 = None
         self._map2 = None
 
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=0.8,
-            min_tracking_confidence=0.5
+        model_path = str(PROVIDED_CODE / 'hand_landmarker.task')
+        base_options = mp_python.BaseOptions(model_asset_path=model_path)
+        options = mp_vision.HandLandmarkerOptions(
+            base_options=base_options,
+            num_hands=1,
+            min_hand_detection_confidence=0.8,
+            min_tracking_confidence=0.5,
+            running_mode=mp_vision.RunningMode.VIDEO,
         )
-        self.mp_draw = mp.solutions.drawing_utils
+        self.hands = mp_vision.HandLandmarker.create_from_options(options)
+        self._frame_ts = 0
 
         h_path = PROVIDED_CODE / 'HomographyMatrix.npy'
         cam_path = PROVIDED_CODE / 'camera_params.npz'
@@ -81,19 +86,21 @@ class ArmDetectionNode(Node):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width = frame.shape[:2]
 
-        result = self.hands.process(rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        self._frame_ts += 33
+        result = self.hands.detect_for_video(mp_image, self._frame_ts)
 
-        if result.multi_hand_landmarks:
-            hand_landmarks = result.multi_hand_landmarks[0]
+        if result.hand_landmarks:
+            hand_landmarks = result.hand_landmarks[0]
 
-            wrist      = hand_landmarks.landmark[0]
-            middle_mcp = hand_landmarks.landmark[9]
+            wrist      = hand_landmarks[0]
+            middle_mcp = hand_landmarks[9]
 
             # Palm centre: midpoint of wrist and middle-finger MCP
             palm_x = ((wrist.x + middle_mcp.x) / 2) * width
             palm_y = ((wrist.y + middle_mcp.y) / 2) * height
 
-            confidence = getattr(wrist, 'visibility', 1.0)
+            confidence = wrist.visibility if wrist.visibility is not None else 1.0
 
             # Always publish pixel coords (for preview_node — no homography needed)
             pixel_msg = Point()
@@ -115,7 +122,7 @@ class ArmDetectionNode(Node):
                 self._pub.publish(msg)
         else:
             self.get_logger().warn(
-                'No hand detected in workspace_camera/image_raw',
+                'No hand detected in /workspace_camera/image_raw',
                 throttle_duration_sec=2.0,
             )
 

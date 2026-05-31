@@ -13,6 +13,8 @@ from pick_interfaces.msg import TagDetectionArray
 
 KEY_Q   = ord('q')
 KEY_TAB = 9
+KEY_H   = ord('h')
+KEY_V   = ord('v')
 
 LOCK_DISPLAY_SEC = 2.0  # how long to show "LOCKED" banner after a lock fires
 
@@ -46,6 +48,8 @@ class PreviewNode(Node):
         self._latest_tags: TagDetectionArray | None = None
         self._display_scale = 0.5
         self._show_gaze     = False
+        self._flip_h        = False
+        self._flip_v        = False
 
         # Gaze state
         self._gaze_tracking_id  = -1   # current candidate from ~/tracking
@@ -60,7 +64,7 @@ class PreviewNode(Node):
         self.create_subscription(Int32, '/gaze/gazed_tag_id',              self._cb_locked,     10)
 
         self.create_timer(1.0 / 30.0, self._draw)
-        self.get_logger().info('preview_node ready — Tab: toggle camera | Q: quit')
+        self.get_logger().info('preview_node ready — Tab: toggle camera | H: flip horizontal | V: flip vertical | Q: quit')
 
     # ── callbacks ──────────────────────────────────────────────────────────
 
@@ -92,8 +96,15 @@ class PreviewNode(Node):
 
         if self._show_gaze:
             frame = self._get_frame(self._gaze_frame, s)
+            if self._flip_h and self._flip_v:
+                frame = cv2.flip(frame, -1)
+            elif self._flip_h:
+                frame = cv2.flip(frame, 1)
+            elif self._flip_v:
+                frame = cv2.flip(frame, 0)
             self._overlay_gaze(frame, s)
-            cv2.putText(frame, 'GAZE CAM', (8, 18),
+            flip_str = f"  H={'ON' if self._flip_h else 'off'}  V={'ON' if self._flip_v else 'off'}"
+            cv2.putText(frame, f'GAZE CAM{flip_str}', (8, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_LABEL, 1)
         else:
             frame = self._get_frame(self._workspace_frame, s)
@@ -101,7 +112,7 @@ class PreviewNode(Node):
             cv2.putText(frame, 'WORKSPACE CAM', (8, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_LABEL, 1)
 
-        cv2.imshow('S26 Preview  [Tab: toggle | Q: quit]', frame)
+        cv2.imshow('S26 Preview  [Tab: toggle | H: flip H | V: flip V | Q: quit]', frame)
         key = cv2.waitKey(1) & 0xFF
         if key == KEY_Q:
             cv2.destroyAllWindows()
@@ -111,6 +122,12 @@ class PreviewNode(Node):
             self.get_logger().info(
                 f"Switched to {'gaze' if self._show_gaze else 'workspace'} camera"
             )
+        elif key == KEY_H:
+            self._flip_h = not self._flip_h
+            self.get_logger().info(f"Horizontal flip: {'ON' if self._flip_h else 'off'}")
+        elif key == KEY_V:
+            self._flip_v = not self._flip_v
+            self.get_logger().info(f"Vertical flip: {'ON' if self._flip_v else 'off'}")
 
     def _get_frame(self, src, s):
         """Return a scaled copy of src, or a black placeholder if src is None."""

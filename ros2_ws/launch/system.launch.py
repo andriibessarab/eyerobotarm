@@ -7,13 +7,13 @@ def generate_launch_description():
     return LaunchDescription([
         SetEnvironmentVariable(
             'PROVIDED_CODE_PATH',
-            '/home/andriibessarab/Desktop/eyerobotarm/provided_code',
+            '/home/andriibessarab/Desktop/S26-Toyota-Innovation-Challenge/provided_code',
         ),
         Node(
             package='dobot_arm',
             executable='dobot_arm_node',
             output='screen',
-            parameters=[{'serial_port': '/dev/ttyUSB0'}],
+            parameters=[{'serial_port': '/dev/ttyUSB1'}],
         ),
         Node(
             package='camera_pipeline',
@@ -27,7 +27,7 @@ def generate_launch_description():
             executable='gaze_camera_node',
             name='gaze_camera',
             output='screen',
-            parameters=[{'camera_source': 'http://192.168.8.2:8080/stream.mjpg'}],
+            parameters=[{'camera_source': 'tcp://10.12.194.1:5000'}],
         ),
         Node(
             package='camera_pipeline',
