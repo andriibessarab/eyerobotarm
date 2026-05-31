@@ -4,6 +4,7 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import Point
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from apriltag_msgs.msg import AprilTagDetectionArray
 
 
 class PreviewNode(Node):
@@ -15,10 +16,12 @@ class PreviewNode(Node):
         self._bridge = CvBridge()
         self._latest_frame = None
         self._latest_arm_position: Point | None = None
+        self._latest_apriltags: AprilTagDetectionArray | None = None
         self._display_scale = 0.5
 
         self.create_subscription(Image, '/workspace_camera/image_raw', self._cb_frame, 10)
         self.create_subscription(Point, '/workspace/arm_position', self._cb_arm_position, 10)
+        self.create_subscription(AprilTagDetectionArray, '/workspace/tag_detections', self._cb_apriltags, 10)
 
         self.create_timer(1.0 / 30.0, self._draw)
         self.get_logger().info('preview_node ready — press Q in the window to quit')
@@ -29,11 +32,20 @@ class PreviewNode(Node):
     def _cb_arm_position(self, msg: Point):
         self._latest_arm_position = msg
 
+    def _cb_apriltags(self, msg: AprilTagDetectionArray):
+        self._latest_apriltags = msg
+
     def _draw(self):
         if self._latest_frame is None:
             return
 
         frame = self._latest_frame.copy()
+
+        if self._latest_apriltags is not None:
+            for det in self._latest_apriltags.detections:
+                tag_x = int(det.centre.x)
+                tag_y = int(det.centre.y)
+                cv2.circle(frame, (tag_x, tag_y), 6, (255, 0, 0), -1)
 
         if self._latest_arm_position is not None:
             arm_x = int(self._latest_arm_position.x)

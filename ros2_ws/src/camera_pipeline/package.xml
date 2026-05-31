@@ -10,7 +10,15 @@
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
+  <depend>geometry_msgs</depend>
+  <depend>apriltag_msgs</depend>
   <depend>pick_interfaces</depend>
+
+  <!-- Python runtime dependencies used by arm_detection_node.py -->
+  <exec_depend>numpy</exec_depend>
+  <exec_depend>mediapipe</exec_depend>
+  <exec_depend>opencv-python</exec_depend>
+  <exec_depend>pupil-apriltags</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

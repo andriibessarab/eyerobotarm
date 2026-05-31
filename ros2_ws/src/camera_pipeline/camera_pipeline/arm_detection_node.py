@@ -82,8 +82,7 @@ class ArmDetectionNode(Node):
         return float(xy[0]), float(xy[1])
 
     def _cb_frame(self, msg: Image):
-        if self._H is None:
-            return
+      
 
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -103,19 +102,21 @@ class ArmDetectionNode(Node):
             msg = Point()
             msg.x = x
             msg.y = y
+            msg.z = wrist.z
+            confidence = getattr(wrist, 'visibility', 1.0)
         
             self.get_logger().info(
-                f'publishing arm_position:(confidence={hand_landmarks.landmark[0].visibility:.2f})',
+                f'publishing arm_position: x={msg.x:.1f} y={msg.y:.1f} z={msg.z:.3f} confidence={confidence:.2f}',
                 throttle_duration_sec=1.0,
             )
             self._pub.publish(msg)
+        else:
+            self.get_logger().warn('No hand detected in workspace_camera/image_raw', throttle_duration_sec=2.0)
 
 
         
         
-       
-        # TODO: implement MediaPipe hand detection and publish Point
-        pass
+    
 
 
 def main(args=None):

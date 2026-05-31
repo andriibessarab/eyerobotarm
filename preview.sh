@@ -32,6 +32,10 @@ sleep 1
 ARM_PID=$!
 sleep 1
 
+"$CAMERA_BIN/apriltag_workspace_node" &
+TAG_PID=$!
+sleep 1
+
 "$CAMERA_BIN/preview_node" &
 PREV_PID=$!
 
