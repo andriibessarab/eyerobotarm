@@ -43,6 +43,10 @@ class PreviewNode(Node):
         frame = self._latest_frame.copy()
         s = self._display_scale
 
+        # Resize first so overlay coordinates only need one scale factor
+        if s != 1.0:
+            frame = cv2.resize(frame, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+
         if self._latest_tags is not None:
             for det in self._latest_tags.detections:
                 cx = int(det.pixel_x * s)
@@ -55,9 +59,6 @@ class PreviewNode(Node):
             arm_x = int(self._latest_arm_pixel.x * s)
             arm_y = int(self._latest_arm_pixel.y * s)
             cv2.circle(frame, (arm_x, arm_y), 8, (0, 0, 255), -1)
-
-        if s != 1.0:
-            frame = cv2.resize(frame, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
 
         cv2.imshow('S26 Workspace Camera', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
