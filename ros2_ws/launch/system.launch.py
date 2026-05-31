@@ -57,6 +57,11 @@ def generate_launch_description():
         ),
         Node(
             package='camera_pipeline',
+            executable='status_node',
+            output='screen',
+        ),
+        Node(
+            package='camera_pipeline',
             executable='preview_node',
             output='screen',
         ),
